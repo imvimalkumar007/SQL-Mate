@@ -4,12 +4,12 @@ Local persistence for schema models, user annotations, redaction rules, query hi
 
 ## Storage location
 
-`<app data dir>/schema-sql/store.db` — a single SQLite file, encrypted with SQLCipher. The encryption key is derived from a value stored in the OS keychain.
+`<app data dir>/sql-mate/store.db` — a single SQLite file, encrypted with SQLCipher. The encryption key is derived from a value stored in the OS keychain.
 
 App data dir resolves to:
-- macOS: `~/Library/Application Support/schema-sql/`
-- Windows: `%APPDATA%\schema-sql\`
-- Linux: `$XDG_DATA_HOME/schema-sql/` or `~/.local/share/schema-sql/`
+- macOS: `~/Library/Application Support/sql-mate/`
+- Windows: `%APPDATA%\sql-mate\`
+- Linux: `$XDG_DATA_HOME/sql-mate/` or `~/.local/share/sql-mate/`
 
 ## Tables
 
@@ -94,7 +94,7 @@ Schema versions are managed via a `schema_version` row in `settings`. Migrations
 The SQLCipher key is derived as follows:
 
 1. On first launch, generate 32 bytes from a CSPRNG.
-2. Store those bytes in the OS keychain under the entry name `schema-sql.db-key`.
+2. Store those bytes in the OS keychain under the entry name `sql-mate.db-key`.
 3. On every subsequent launch, read the bytes from the keychain and pass to SQLCipher.
 
 If the keychain entry is missing (e.g., the user wiped their keychain), the database is unreadable and the user must reset it. We do not provide a recovery mechanism beyond reset, by design — recoverable encryption is not encryption.

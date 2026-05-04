@@ -4,7 +4,7 @@ This document describes the high-level system design. Each module has its own de
 
 ## Shape of the system
 
-Schema SQL is a single-binary desktop application. There is no server. There is no cloud component. The only network calls the application makes are:
+SQL Mate is a single-binary desktop application. There is no server. There is no cloud component. The only network calls the application makes are:
 
 1. Direct HTTPS to the LLM provider the user configured, using the user's own API key.
 2. Direct database connections from the user's machine to their own database, over the network the user already trusts for that purpose.
@@ -16,7 +16,7 @@ Nothing else.
 ┌─────────────────────────── User's machine ───────────────────────────┐
 │                                                                       │
 │  ┌──────────────────────────────────────────────────────────────┐    │
-│  │  Schema SQL desktop app (Tauri)                              │    │
+│  │  SQL Mate desktop app (Tauri)                                │    │
 │  │                                                              │    │
 │  │  ┌────────────────┐    ┌─────────────────┐    ┌──────────┐  │    │
 │  │  │ React frontend │ ←→ │ Rust core       │ ←→ │ SQLite   │  │    │
@@ -128,10 +128,10 @@ Both the live extractor and any future file-based ingestion produce this shape. 
 
 ## Persistence
 
-- Schema cache, annotations, query history: SQLite at `<app data dir>/schema-sql/store.db`. Encrypted using SQLCipher with a key derived from a value stored in the OS keychain.
+- Schema cache, annotations, query history: SQLite at `<app data dir>/sql-mate/store.db`. Encrypted using SQLCipher with a key derived from a value stored in the OS keychain.
 - Connection profiles: same SQLite file. Connection strings are not stored — only the host/port/database/username and a reference to the keychain entry that holds the password.
 - API keys: OS keychain only. Never written to disk by us.
-- Logs: `<app data dir>/schema-sql/logs/`. Structure-only (counts, timings, error types). Never schema content. Never query content. Rotated daily, capped at 30 days.
+- Logs: `<app data dir>/sql-mate/logs/`. Structure-only (counts, timings, error types). Never schema content. Never query content. Rotated daily, capped at 30 days.
 
 ## What we do not have and will not add without an ADR
 
