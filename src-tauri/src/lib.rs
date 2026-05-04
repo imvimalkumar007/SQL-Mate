@@ -1,13 +1,32 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+mod llm;
+
+const STUB_SCHEMA: &str = "schema: public
+  customers
+    id: integer [PK] [NOT NULL]
+    email: varchar [NOT NULL]
+    created_at: timestamp [NOT NULL]
+  orders
+    id: integer [PK] [NOT NULL]
+    customer_id: integer [NOT NULL] [FK -> public.customers.id]
+    total_cents: integer [NOT NULL]
+    placed_at: timestamp [NOT NULL]";
+
+const STUB_QUESTION: &str = "How many orders did each customer place last month?";
+
 #[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
+async fn generate_sql(api_key: String) -> Result<String, String> {
+    if api_key.trim().is_empty() {
+        return Err("API key is empty.".to_string());
+    }
+    llm::anthropic::call_anthropic(&api_key, STUB_SCHEMA, STUB_QUESTION)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![greet])
+        .invoke_handler(tauri::generate_handler![generate_sql])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
