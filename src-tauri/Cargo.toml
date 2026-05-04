@@ -23,4 +23,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # HTTP client. Pinned, minimal features. See docs/decisions/0005-reqwest-for-http.md.
 reqwest = { version = "=0.13.3", default-features = false, features = ["rustls", "json"] }
+# Postgres driver. Pinned, minimal features. See docs/decisions/0006-sqlx-for-postgres.md.
+sqlx = { version = "=0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres"] }
+# Local encrypted store. Pinned. See docs/decisions/0007-sqlcipher-for-local-store.md.
+rusqlite = { version = "=0.39.0", features = ["bundled-sqlcipher-vendored-openssl"] }
+# OS keychain access for SQLCipher key, DB passwords, and the LLM API key.
+keyring = "=3.6.3"
+uuid = { version = "=1.23.1", features = ["v4", "serde"] }
+time = { version = "=0.3.47", features = ["serde", "formatting"] }
 

@@ -11,6 +11,8 @@ target/
 src-tauri/target/
 src-tauri/gen/
 **/*.rs.bk
+# Per-repo cargo home (set up by dev.ps1 to keep the registry off C:).
+.cargo-home/
 
 # Env and secrets — DO NOT REMOVE THESE LINES
 .env
