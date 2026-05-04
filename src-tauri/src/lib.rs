@@ -1,4 +1,9 @@
 mod llm;
+mod schema;
+mod store;
+
+use store::Store;
+use tauri::Manager;
 
 const STUB_SCHEMA: &str = "schema: public
   customers
@@ -26,6 +31,13 @@ async fn generate_sql(api_key: String) -> Result<String, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| {
+            let data_dir = app.path().data_dir()?;
+            let db_path = data_dir.join("sql-mate").join("store.db");
+            let store = Store::open(&db_path)?;
+            app.manage(store);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![generate_sql])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

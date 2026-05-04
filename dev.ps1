@@ -13,6 +13,8 @@
 #
 # After dot-sourcing, run cargo / pnpm tauri dev as usual in the same shell.
 
+# Save the caller's ErrorActionPreference so we don't leak ours when dot-sourced.
+$__devps1_saved_eap = $ErrorActionPreference
 $ErrorActionPreference = "Stop"
 
 # 1. CARGO_HOME — local to this repo.
@@ -26,6 +28,29 @@ Write-Host "CARGO_HOME = $env:CARGO_HOME"
 $rustBin = Join-Path $env:USERPROFILE ".cargo\bin"
 if ((Test-Path $rustBin) -and ($env:Path -notlike "*$rustBin*")) {
     $env:Path = "$rustBin;$env:Path"
+}
+
+# 2a. Make Perl reachable for openssl-src (vendored OpenSSL build, used by
+# rusqlite's SQLCipher feature). Git for Windows bundles a usable Perl that we
+# can borrow rather than installing Strawberry Perl globally.
+# Strawberry Perl portable on E: is preferred — Git for Windows ships a minimal
+# Perl that lacks core modules (Locale::Maketext::Simple etc.) that openssl-src
+# needs.
+$perlCandidates = @(
+    "E:\strawberry-perl-portable\perl\bin"
+    "C:\Strawberry\perl\bin"
+    "C:\Perl64\bin"
+    "C:\Program Files\Git\usr\bin"
+)
+if (-not (Get-Command perl -ErrorAction SilentlyContinue)) {
+    foreach ($candidate in $perlCandidates) {
+        if (Test-Path (Join-Path $candidate "perl.exe")) {
+            if ($env:Path -notlike "*$candidate*") {
+                $env:Path = "$candidate;$env:Path"
+            }
+            break
+        }
+    }
 }
 
 # 3. Source MSVC env via vcvars64. Locate VS via vswhere.
@@ -62,3 +87,9 @@ Write-Host "  link.exe on PATH: $linkExists"
 
 Write-Host ""
 Write-Host "Dev env ready. Run cargo / pnpm tauri dev in this shell."
+
+# Restore caller's ErrorActionPreference. Cargo writes informational messages
+# (e.g. "Compiling foo") to stderr; with ErrorActionPreference=Stop, PowerShell
+# would treat those as terminating errors and kill the calling script.
+$ErrorActionPreference = $__devps1_saved_eap
+Remove-Variable -Name __devps1_saved_eap -ErrorAction SilentlyContinue
