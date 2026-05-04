@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "sql-mate",
+  "productName": "SQL Mate",
   "version": "0.1.0",
   "identifier": "com.sqlmate.app",
   "build": {
@@ -12,9 +12,9 @@
   "app": {
     "windows": [
       {
-        "title": "sql-mate",
-        "width": 800,
-        "height": 600
+        "title": "SQL Mate",
+        "width": 900,
+        "height": 700
       }
     ],
     "security": {
