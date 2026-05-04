@@ -12,10 +12,10 @@ The LLM call path is the most security-sensitive code in the application. `CLAUD
 
 ## Decision
 
-We use `reqwest`, pinned to an exact version, with default features disabled and only `rustls-tls` and `json` enabled:
+We use `reqwest`, pinned to an exact version, with default features disabled and only `rustls` and `json` enabled:
 
 ```toml
-reqwest = { version = "=0.13.3", default-features = false, features = ["rustls-tls", "json"] }
+reqwest = { version = "=0.13.3", default-features = false, features = ["rustls", "json"] }
 ```
 
 The pin and the feature set are part of this decision. Bumping the version or changing features requires updating this ADR.
@@ -23,7 +23,7 @@ The pin and the feature set are part of this decision. Bumping the version or ch
 ## Rationale
 
 - **Async-native fits Tauri's tokio runtime.** `tokio` is the runtime Tauri's Rust core uses; an async HTTP client is the natural fit. A sync client would block tokio worker threads or require `spawn_blocking` plumbing for every request.
-- **`rustls-tls` avoids the OpenSSL dependency on Windows.** `native-tls` on Windows uses Schannel and on Linux/macOS uses OpenSSL or SecureTransport, which complicates cross-platform builds and pulls in a C dependency. `rustls` is pure Rust, builds the same on all three target OSes, and uses webpki-roots for CA trust — predictable and self-contained.
+- **`rustls` avoids the OpenSSL dependency on Windows.** `native-tls` on Windows uses Schannel and on Linux/macOS uses OpenSSL or SecureTransport, which complicates cross-platform builds and pulls in a C dependency. `rustls` is pure Rust, builds the same on all three target OSes, and uses webpki-roots for CA trust — predictable and self-contained.
 - **Disabling default features keeps the LLM call path's dependency surface small.** Default features pull in `charset`, `http2`, `macos-system-configuration`, and others. Phase 1 needs none of these. Enabling features deliberately, one at a time, is the right default for this project's posture.
 - **Exact version pin matches the project's supply-chain stance.** `CLAUDE.md` and `docs/SECURITY_MODEL.md` (T7) call for pinned dependencies and minimal auto-update. `=0.13.3` enforces this in `Cargo.toml` itself, not just `Cargo.lock`.
 
