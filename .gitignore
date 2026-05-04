@@ -1,0 +1,42 @@
+# Node / pnpm
+node_modules/
+dist/
+dist-ssr/
+*.local
+.pnpm-store/
+.vite/
+
+# Rust / Tauri
+target/
+src-tauri/target/
+src-tauri/gen/
+**/*.rs.bk
+
+# Env and secrets — DO NOT REMOVE THESE LINES
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+
+# Local SQLite databases (dev databases, schema cache)
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
