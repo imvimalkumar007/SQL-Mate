@@ -1,3 +1,4 @@
+mod extract;
 mod llm;
 mod schema;
 mod store;
