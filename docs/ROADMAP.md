@@ -2,21 +2,21 @@
 
 Milestones, in order. Each phase has a "done when" criterion. Do not start the next phase until the previous one's done-when is met.
 
-## Phase 0 — Foundation (current)
+## Phase 0 — Foundation (done)
 
 Documentation and architecture only. No production code.
 
 **Done when:** This `docs/` directory is reviewed and signed off. ADRs 0001–0004 are accepted.
 
-## Phase 1 — Walking skeleton
+## Phase 1 — Walking skeleton (done)
 
 Tauri app launches. Hardcoded schema is sent to a hardcoded Anthropic API call with a hardcoded question. Result is parsed and shown.
 
 **Goal:** Prove the end-to-end shape works on all three target OSes (macOS, Windows, Linux).
 
-**Done when:** A developer on each target OS can run `pnpm tauri dev`, paste an API key into a settings field, click a button, and see a SQL query generated from a stub schema.
+**Done when:** A developer on each target OS can run `pnpm tauri dev`, paste an API key into a settings field, click a button, and see a SQL query generated from a stub schema. — Verified end-to-end on Windows. macOS and Linux verification deferred until those machines are available; see `PHASE_1_LOG.md` for the build log.
 
-## Phase 2 — Live schema extraction (Postgres only)
+## Phase 2 — Live schema extraction (Postgres only) (current)
 
 Implement the Rust schema extractor for Postgres. User pastes connection details, app connects with read-only credentials, runs the metadata queries documented in `docs/architecture/schema-extraction.md`, normalizes to the canonical schema model, persists to the local SQLite store.
 
