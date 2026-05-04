@@ -4,4 +4,3 @@ mod schemas;
 
 pub use connection::{Store, StoreError};
 pub use profiles::{ConnectionProfile, NewConnectionProfile};
-pub use schemas::PersistedSchema;
