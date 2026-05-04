@@ -1,10 +1,10 @@
-# Schema SQL — local-first natural language to SQL
+# SQL Mate — local-first natural language to SQL
 
 A desktop application that lets data professionals ask questions of their database in plain English and get back SQL queries — without ever exposing row data to an LLM or to our infrastructure.
 
 ## The one-paragraph pitch
 
-Most AI SQL tools require either a live database connection to a hosted service or pasting schema and sample rows into a chat interface. Neither is acceptable for security-conscious teams in finance, healthcare, legal, or government. Schema SQL runs entirely on the user's machine. It extracts schema metadata locally (never row data), sends only that metadata plus the user's question to an LLM provider of the user's choice using their own API key, and validates and runs the generated SQL locally against a read-only database connection. We are never in the data path.
+Most AI SQL tools require either a live database connection to a hosted service or pasting schema and sample rows into a chat interface. Neither is acceptable for security-conscious teams in finance, healthcare, legal, or government. SQL Mate runs entirely on the user's machine. It extracts schema metadata locally (never row data), sends only that metadata plus the user's question to an LLM provider of the user's choice using their own API key, and validates and runs the generated SQL locally against a read-only database connection. We are never in the data path.
 
 ## Status
 
@@ -23,7 +23,7 @@ If you are a contributor or an AI assistant picking this up:
 ## Repository layout
 
 ```
-schema-sql-tool/
+sql-mate/
 ├── README.md                  This file
 ├── CLAUDE.md                  Instructions for Claude Code sessions
 ├── docs/
