@@ -31,4 +31,6 @@ rusqlite = { version = "=0.39.0", features = ["bundled-sqlcipher-vendored-openss
 keyring = "=3.6.3"
 uuid = { version = "=1.23.1", features = ["v4", "serde"] }
 time = { version = "=0.3.47", features = ["serde", "formatting"] }
+# CSPRNG for the SQLCipher key generated on first launch.
+getrandom = "=0.3.4"
 
