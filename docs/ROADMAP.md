@@ -22,13 +22,13 @@ Implement the Rust schema extractor for Postgres. User pastes connection details
 
 **Done when:** A user can connect to a real Postgres database, see the extracted schema in the UI, and have it persisted across app restarts. End-to-end question-to-SQL works against this real schema. — Verified end-to-end on Windows against a local Postgres 17.9 instance with a 4-table seed schema. OS keychain integration deferred per ADR 0008; see PHASE_2_LOG.md for the build log.
 
-## Phase 3 — Validation and execution (current)
+## Phase 3 — Validation and execution (done)
 
 Wire up the Python sidecar with `sqlglot`. Generated SQL is validated for read-only before display. Add the "run query" button that executes against the user's database in a read-only transaction with a timeout and row cap.
 
-**Done when:** The full loop works for Postgres: connect, extract, ask, see SQL, validate, run, see results. All without any row data touching the LLM call path. Validator rejects all non-`SELECT` statements in tests.
+**Done when:** The full loop works for Postgres: connect, extract, ask, see SQL, validate, run, see results. All without any row data touching the LLM call path. Validator rejects all non-`SELECT` statements in tests. — Verified end-to-end on Windows: Python 3.14 sidecar with `sqlglot==30.7.0`, layer-1 Rust pre-parse, layer-2 sqlglot AST walk, executor running in a `default_transaction_read_only` enforced transaction with 1000-row cap and 30 s timeout. See `PHASE_3_LOG.md`.
 
-## Phase 4 — Provider abstraction
+## Phase 4 — Provider abstraction (current)
 
 Refactor the LLM client into the provider interface documented in `docs/architecture/llm-provider.md`. First-class support for Anthropic and OpenAI. OpenAI-compatible fallback for any base URL the user provides. Model registry loaded from a static JSON file.
 
