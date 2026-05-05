@@ -409,5 +409,19 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 .pill .model { color: var(--primary); }
 .pill .sep { color: var(--text-dim); margin: 0 4px; }
 .pill .pill-spacer { flex: 1; }
-.pill .pill-chevron { font-size: 14px; color: var(--text-dim); }
+.pill-chevron-btn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.pill-chevron-btn:hover { background: var(--surface-4); color: var(--text); }
+.pill .pill-chevron { font-size: 14px; }
 .pill:hover { background: var(--surface-3); }

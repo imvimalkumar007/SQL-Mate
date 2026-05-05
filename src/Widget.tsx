@@ -292,7 +292,7 @@ export function Widget() {
           ? "danger"
           : "pulse";
     return (
-      <div className="pill" onDoubleClick={() => void expandFromPill()}>
+      <div className="pill">
         <span className={`status-dot ${dotClass}`} />
         <span>{profile?.name ?? "no connection"}</span>
         {modelDisplay && (
@@ -302,10 +302,14 @@ export function Widget() {
           </>
         )}
         <span className="pill-spacer" />
-        <IconExpandLess
-          className="pill-chevron"
-          style={{ cursor: "pointer" }}
-        />
+        <button
+          type="button"
+          className="pill-chevron-btn"
+          title="Expand widget"
+          onClick={() => void expandFromPill()}
+        >
+          <IconExpandLess className="pill-chevron" />
+        </button>
       </div>
     );
   }
