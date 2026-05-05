@@ -98,6 +98,23 @@ impl Store {
         )?;
         Ok(())
     }
+
+    /// Update only the model identifier on an existing provider config. Used
+    /// by the Phase 7 picker for in-flow model switching without rotating the
+    /// stored API key.
+    pub fn update_provider_model(&self, id: &str, model: &str) -> Result<(), StoreError> {
+        let conn = self.lock();
+        let n = conn.execute(
+            "UPDATE provider_configs SET model = ?1 WHERE id = ?2",
+            params![model, id],
+        )?;
+        if n == 0 {
+            return Err(StoreError::Sqlite(format!(
+                "provider config {id} not found"
+            )));
+        }
+        Ok(())
+    }
 }
 
 fn row_to_provider(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProviderConfig> {

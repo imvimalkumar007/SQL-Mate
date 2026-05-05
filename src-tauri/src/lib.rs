@@ -49,6 +49,7 @@ pub fn run() {
             commands::get_embedding_stats,
             commands::list_provider_configs,
             commands::create_provider_config,
+            commands::update_provider_model,
             commands::delete_provider_config,
             commands::set_active_provider,
             commands::get_active_provider,
