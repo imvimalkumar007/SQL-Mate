@@ -92,16 +92,22 @@ See `docs/PHASE_10_KICKOFF.md` for the full kickoff doc.
 
 ## Phase 11 — Widget polish (current)
 
-Multi-monitor position memory, hotkey customization UI, auto-start on Windows boot, and surfacing hotkey-conflict errors. The three items called out as Phase 11 in `PHASE_10_KICKOFF.md`.
+Multi-monitor position memory, hotkey customization UI, auto-start on Windows boot, surfacing hotkey-conflict errors, and a series of fixes that surfaced once the user actually started using the widget on Windows.
 
-**Done when:** the rough edges from Phase 10 are addressed and the widget feels native on Windows — opens after reboot, restores to the right monitor, doesn't conflict with other apps' hotkeys (and tells you when it does).
+**Done when:** the rough edges from Phase 10 are addressed and the widget feels native on Windows — opens after reboot, restores to the right monitor, doesn't conflict with other apps' hotkeys (and tells you when it does), is draggable, has clean rounded corners, and is consistent with the main window's visual language.
 
 What ships:
 
-- **Hotkey customization.** Settings → Widget hotkey shows the current binding and a "Change" button. Click → press a combo with at least one modifier → the new hotkey is registered (or the registration failure is surfaced inline). Stored as a `widget_hotkey` row in the `settings` table; default `CommandOrControl+Shift+Space` if unset.
+- **Hotkey customization.** Settings → Widget hotkey shows the current binding and a "Change" button. Click → press a combo with at least one modifier → the new hotkey is registered (or the registration failure is surfaced inline). Stored as a `widget_hotkey` row in the `settings` table; default `Ctrl+Shift+Space` (the previous draft used `CommandOrControl+...` but that legacy alias didn't always parse in `tauri-plugin-global-shortcut` 2.x; we now also retry with the hardcoded default if the saved value fails to register).
 - **Hotkey-conflict error surfaced in the UI.** If startup-time registration fails (another app already owns the combo), `widget_hotkey_error` is written to settings and the Settings dialog shows a banner pointing the user to rebind.
-- **Multi-monitor position safety.** When the widget is summoned (hotkey, tray click, or `show_widget` command), `ensure_widget_on_visible_monitor` checks whether any part of the widget overlaps a connected monitor. If not (the user disconnected the monitor it was on), the widget is centered on the primary monitor before being shown. No-op if already on a visible monitor — your saved position is respected when it's still valid.
+- **Multi-monitor position safety.** When the widget is summoned (hotkey, tray click, or `show_widget` command), `ensure_widget_on_visible_monitor` checks whether at least 80px of the widget overlaps a connected monitor. If not (the user disconnected the monitor it was on, or it's the first show with no saved position), the widget is repositioned to the top-right of the primary monitor with a 24px margin. Saved positions that are still valid are respected.
 - **Auto-start on Windows boot.** `tauri-plugin-autostart` ships behind a Settings → "Start with Windows" toggle. Off by default. The widget stays hidden in the tray on launch; only the hotkey or tray click brings it forward, so auto-start does not slow login.
+- **Widget polish to match the prototype.** Material Symbols-style inline SVG icons (no font CDN, per the security model), proper `Ctrl ↵` shortcut chip on the Generate button, box-shadow ring-pulse on the status dot, schema-pill format `{schema_name} · N tables`, error banner with strong title + secondary detail, footer states with their own colors and icons, and the pill's expand chevron is now a real button so you can click it without the drag region eating the event.
+- **Main app aligned to the widget's design language.** App.css rewritten against the widget's CSS tokens (`--bg`, `--surface`, `--primary`, etc.). Both windows now share the same dark Material 3-inspired palette, Inter / JetBrains Mono typography, button shapes, dialog styling, and code-block syntax colors. No dark-mode media query — the app is dark-only.
+- **Window resize moved from JS to Rust.** Earlier the pill could render at full-screen size if the JS-side `setSize` raced the React mount. New `apply_widget_size_from_store` (called before `widget.show()`) and `apply_widget_size` (called by `set_widget_pill_mode`) keep the window dimensions in lockstep with the persisted `pill_mode` flag, no race possible.
+- **Transparent widget window.** Set `transparent: true` in `tauri.conf.json` so the area outside the widget's rounded HTML shape shows the desktop instead of WebView2's default white bleed. CSS `box-shadow` on the widget element provides the visible drop shadow so it tracks the rounded outline.
+
+The auto-hide-on-focus-loss behavior (originally Raycast-style) was removed: starting an OS drag transfers focus to the window manager, which fired the hide handler before the user could complete the drag. The widget now stays visible until explicitly dismissed (Esc, the close button, or clicking the tray icon).
 
 ## Phase 12 — First five users
 

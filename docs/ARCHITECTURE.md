@@ -12,32 +12,36 @@ SQL Mate is a single-binary desktop application. There is no server. There is no
 Nothing else. The model registry is bundled with the app, not fetched.
 
 ```
-┌─────────────────────────── User's machine ───────────────────────────┐
-│                                                                       │
-│  ┌──────────────────────────────────────────────────────────────┐    │
-│  │  SQL Mate desktop app (Tauri)                                │    │
-│  │                                                              │    │
-│  │  ┌────────────────┐    ┌─────────────────┐    ┌──────────┐  │    │
-│  │  │ React frontend │ ←→ │ Rust core       │ ←→ │ SQLCipher│  │    │
-│  │  │ (3-section UI: │    │  - extractor    │    │  store   │  │    │
-│  │  │  schema, ask,  │    │  - validator*   │    └──────────┘  │    │
-│  │  │  generated SQL)│    │  - llm client   │                  │    │
-│  │  │  click-to-copy │    │  - redact +     │                  │    │
-│  │  └────────────────┘    │    request log  │                  │    │
-│  │                        └─────────────────┘                  │    │
-│  │                                  ↕                          │    │
-│  │                        ┌─────────────────┐                  │    │
-│  │                        │ Python sidecar  │                  │    │
-│  │                        │  (sqlglot AST)  │                  │    │
-│  │                        └─────────────────┘                  │    │
-│  └──────────────────────────────────────────────────────────────┘    │
-│                                ↕                                      │
-│                   ┌────────────────────────┐                          │
-│                   │ User's database        │                          │
-│                   │ — schema extraction    │                          │
-│                   │   only (metadata)      │                          │
-│                   └────────────────────────┘                          │
-└──────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────── User's machine ─────────────────────────────────┐
+│                                                                                  │
+│  ┌────────────────────────────────────────────────────────────────────────┐    │
+│  │  SQL Mate desktop app (Tauri)                                          │    │
+│  │                                                                        │    │
+│  │  ┌────────────────┐  ┌────────────────┐  ┌─────────────────┐  ┌─────┐ │    │
+│  │  │ Main window    │  │ Widget window  │  │ Rust core       │ │SQL  │ │    │
+│  │  │ (admin)        │  │ (Win-only      │← │ - extractor     │← │Cipher│ │    │
+│  │  │ schema review, │  │  hotkey-       │ ←┤ - validator*    │ ←┤store│ │    │
+│  │  │ redaction,     │← │  summoned;     │  │ - llm client    │  └─────┘ │    │
+│  │  │ history,       │  │  ADR 0014)     │  │ - redact +      │          │    │
+│  │  │ settings       │  │  pill ↔ widget │  │   request log   │  ┌─────┐ │    │
+│  │  └────────────────┘  └────────────────┘  └─────────────────┘  │tray │ │    │
+│  │       ↕                    ↕                       ↕          │icon │ │    │
+│  │       └────────────────────┴───────────────────────┘          └─────┘ │    │
+│  │                                  ↕                                     │    │
+│  │                        ┌─────────────────┐                             │    │
+│  │                        │ Python sidecar  │                             │    │
+│  │                        │  (sqlglot AST)  │                             │    │
+│  │                        └─────────────────┘                             │    │
+│  │                                                                        │    │
+│  │  Global hotkey (Ctrl+Shift+Space, rebindable) → toggle widget          │    │
+│  └────────────────────────────────────────────────────────────────────────┘    │
+│                                ↕                                                 │
+│                   ┌────────────────────────┐                                    │
+│                   │ User's database        │                                    │
+│                   │ — schema extraction    │                                    │
+│                   │   only (metadata)      │                                    │
+│                   └────────────────────────┘                                    │
+└─────────────────────────────────────────────────────────────────────────────────┘
                                  ↕
                    ┌────────────────────────┐
                    │ LLM provider chosen by │
@@ -50,13 +54,14 @@ Nothing else. The model registry is bundled with the app, not fetched.
 
 ## Modules
 
-The system has five live modules plus one removed-but-documented:
+The system has six live modules plus one removed-but-documented:
 
 - **Schema extraction** (`docs/architecture/schema-extraction.md`) — connects to the user's database with read-only credentials, runs metadata-only queries against `information_schema` or equivalent, normalizes the result into the canonical schema model.
-- **Schema store** (`docs/architecture/schema-store.md`) — local SQLCipher-encrypted SQLite database holding the canonical schema model, user annotations, redaction rules, provider configs, embeddings, and query history. Key in a sibling file under the app data dir; OS keychain integration deferred to ADR 0008.
+- **Schema store** (`docs/architecture/schema-store.md`) — local SQLCipher-encrypted SQLite database holding the canonical schema model, user annotations, redaction rules, provider configs, embeddings, history, and Phase 10's `widget_state` (last position, last question, last SQL, pill flag). Key in a sibling file under the app data dir; OS keychain integration deferred to ADR 0008.
 - **LLM provider** (`docs/architecture/llm-provider.md`) — closed-enum dispatch over Anthropic, OpenAI, and OpenAI-compatible endpoints. Handles prompt caching where supported, structured outputs where supported, graceful fallback otherwise.
 - **SQL generation** (`docs/architecture/sql-generation.md`) — overlays persisted annotations + redactions onto the canonical schema model, narrows to the relevant slice (top-N by embedding similarity for large schemas, all tables otherwise), obfuscates sensitive column names, assembles the prompt, calls the provider, de-obfuscates the response.
 - **SQL validation** (`docs/architecture/sql-validation.md`) — Layer 1 in Rust, Layer 2 via `sqlglot` in the Python sidecar. Returns the validated query or a structured error. The verdict gates whether the SQL is shown to the user.
+- **Widget shell** (Phase 10 / ADR 0014; design at `docs/design/widget-design-spec.md`) — Windows-only floating widget summoned by a global hotkey (`Ctrl+Shift+Space` by default, rebindable in Settings) and backed by a system tray icon. Two windows in one Tauri app: `main` and `widget`, each with its own Vite entry point. The widget reuses the existing `generate_sql` / `validate_sql` commands; window resize between expanded (400×500) and pill (220×30) is driven from Rust (`apply_widget_size_from_store`) before each show so the WebView2 render and window dimensions never get out of sync.
 - **~~Query execution~~** (`docs/architecture/query-execution.md`) — **removed in Phase 9**. The doc is kept as an archaeology marker. The app generates and validates SQL but does not execute it; users copy the validated SQL and run it in their own tool.
 
 UI flows that span these modules are documented in `docs/architecture/ui-flows.md`.
