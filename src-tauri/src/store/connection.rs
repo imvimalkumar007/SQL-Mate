@@ -3,10 +3,10 @@ use std::sync::Mutex;
 
 use rusqlite::Connection;
 
-const MIGRATIONS: &[(u32, &str)] = &[(
-    1,
-    include_str!("../../migrations/0001_initial_schema.sql"),
-)];
+const MIGRATIONS: &[(u32, &str)] = &[
+    (1, include_str!("../../migrations/0001_initial_schema.sql")),
+    (2, include_str!("../../migrations/0002_provider_configs.sql")),
+];
 
 pub struct Store {
     conn: Mutex<Connection>,

@@ -63,3 +63,38 @@ export type ExecutionResult = {
   truncated: boolean;
   duration_ms: number;
 };
+
+export type ProviderKind = "anthropic" | "openai" | "openai_compatible";
+
+export type ProviderConfig = {
+  id: string;
+  name: string;
+  kind: ProviderKind;
+  base_url: string;
+  model: string;
+  // api_key never reaches the frontend (#[serde(skip_serializing)] on the Rust side).
+  created_at: number;
+};
+
+export type ModelRegistryModel = {
+  id: string;
+  name: string;
+  context_window: number;
+  supports_caching: boolean;
+  supports_structured_output: boolean;
+  recommended_for?: string;
+};
+
+export type ModelRegistryProvider = {
+  id: string;
+  name: string;
+  kind: ProviderKind;
+  default_base_url: string;
+  models: ModelRegistryModel[];
+  retention_note: string;
+};
+
+export type ModelRegistry = {
+  version: number;
+  providers: ModelRegistryProvider[];
+};

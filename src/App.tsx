@@ -4,6 +4,9 @@ import "./App.css";
 import type {
   ConnectionProfile,
   ExecutionResult,
+  ModelRegistry,
+  ProviderConfig,
+  ProviderKind,
   SchemaModel,
   ValidatedSql,
 } from "./types";
@@ -32,11 +35,36 @@ const EMPTY_FORM: NewProfileForm = {
   password: "",
 };
 
+type NewProviderForm = {
+  name: string;
+  kind: ProviderKind;
+  base_url: string;
+  model: string;
+  api_key: string;
+};
+
+function defaultProviderForm(reg: ModelRegistry | null): NewProviderForm {
+  const first = reg?.providers[0];
+  return {
+    name: first?.name ?? "",
+    kind: first?.kind ?? "anthropic",
+    base_url: first?.default_base_url ?? "",
+    model: first?.models[0]?.id ?? "",
+    api_key: "",
+  };
+}
+
 function App() {
-  // API key
-  const [apiKeySaved, setApiKeySaved] = useState<boolean | null>(null);
-  const [apiKeyDraft, setApiKeyDraft] = useState("");
-  const [apiKeyBusy, setApiKeyBusy] = useState(false);
+  // LLM provider configuration
+  const [providers, setProviders] = useState<ProviderConfig[]>([]);
+  const [activeProviderId, setActiveProviderId] = useState<string | null>(null);
+  const [registry, setRegistry] = useState<ModelRegistry | null>(null);
+  const [showAddProvider, setShowAddProvider] = useState(false);
+  const [providerForm, setProviderForm] = useState<NewProviderForm>(
+    defaultProviderForm(null)
+  );
+  const [providerBusy, setProviderBusy] = useState(false);
+  const [providerError, setProviderError] = useState<string | null>(null);
 
   // Profiles
   const [profiles, setProfiles] = useState<ConnectionProfile[]>([]);
@@ -68,7 +96,11 @@ function App() {
   const [results, setResults] = useState<ExecutionResult | null>(null);
 
   useEffect(() => {
-    void invoke<boolean>("has_api_key").then(setApiKeySaved).catch(() => setApiKeySaved(false));
+    void refreshProviders();
+    void invoke<ModelRegistry>("get_model_registry").then((r) => {
+      setRegistry(r);
+      setProviderForm(defaultProviderForm(r));
+    });
     void refreshProfiles();
   }, []);
 
@@ -88,28 +120,59 @@ function App() {
     setProfiles(list);
   }
 
-  async function saveApiKey() {
-    if (!apiKeyDraft.trim()) return;
-    setApiKeyBusy(true);
+  async function refreshProviders() {
+    const list = await invoke<ProviderConfig[]>("list_provider_configs");
+    setProviders(list);
+    const active = await invoke<ProviderConfig | null>("get_active_provider");
+    setActiveProviderId(active ? active.id : null);
+  }
+
+  function setRegistryDefaultsForKind(kind: ProviderKind, current: NewProviderForm): NewProviderForm {
+    const reg = registry?.providers.find((p) => p.kind === kind);
+    return {
+      ...current,
+      kind,
+      base_url: reg?.default_base_url ?? current.base_url,
+      model: reg?.models[0]?.id ?? current.model,
+      name: current.name || reg?.name || "",
+    };
+  }
+
+  async function saveProvider() {
+    setProviderBusy(true);
+    setProviderError(null);
     try {
-      await invoke("save_api_key", { apiKey: apiKeyDraft });
-      setApiKeyDraft("");
-      setApiKeySaved(true);
+      const created = await invoke<ProviderConfig>("create_provider_config", {
+        req: {
+          name: providerForm.name || providerForm.kind,
+          kind: providerForm.kind,
+          base_url: providerForm.base_url,
+          model: providerForm.model,
+          api_key: providerForm.api_key,
+        },
+      });
+      await refreshProviders();
+      // The backend auto-selects the first config as active; if a config
+      // existed already, the new one is just added — leave active alone.
+      void created;
+      setShowAddProvider(false);
+      setProviderForm(defaultProviderForm(registry));
     } catch (e) {
-      alert(`Could not save API key: ${e}`);
+      setProviderError(String(e));
     } finally {
-      setApiKeyBusy(false);
+      setProviderBusy(false);
     }
   }
 
-  async function clearApiKey() {
-    setApiKeyBusy(true);
-    try {
-      await invoke("delete_api_key");
-      setApiKeySaved(false);
-    } finally {
-      setApiKeyBusy(false);
-    }
+  async function deleteProvider(id: string) {
+    if (!confirm("Delete this provider config? The API key is wiped from the encrypted store.")) return;
+    await invoke("delete_provider_config", { id });
+    await refreshProviders();
+  }
+
+  async function setActive(id: string) {
+    await invoke("set_active_provider", { id });
+    setActiveProviderId(id);
   }
 
   async function testConnection() {
@@ -252,35 +315,151 @@ function App() {
       </p>
 
       <section className="card">
-        <h2>Anthropic API key</h2>
-        {apiKeySaved === null ? (
-          <p className="muted">Loading…</p>
-        ) : apiKeySaved ? (
-          <div className="row">
-            <span className="status status-ok">Saved in encrypted local store</span>
-            <button onClick={clearApiKey} disabled={apiKeyBusy} className="secondary">
-              Clear
+        <div className="card-header">
+          <h2>LLM provider</h2>
+          {!showAddProvider && (
+            <button onClick={() => setShowAddProvider(true)} className="secondary">
+              Add provider
             </button>
+          )}
+        </div>
+
+        {providers.length === 0 && !showAddProvider && (
+          <p className="muted">
+            No provider configured. Click "Add provider" to set one up.
+          </p>
+        )}
+
+        {providers.length > 0 && (
+          <div>
+            <label>
+              Active provider
+              <select
+                value={activeProviderId ?? ""}
+                onChange={(e) => void setActive(e.currentTarget.value)}
+              >
+                {providers.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} · {p.kind} · {p.model}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <ul className="profile-list" style={{ marginTop: "0.5rem" }}>
+              {providers.map((p) => (
+                <li key={p.id} className={p.id === activeProviderId ? "selected" : ""}>
+                  <span className="profile-row" style={{ cursor: "default" }}>
+                    <span className="profile-name">{p.name}</span>
+                    <span className="profile-detail">
+                      {p.kind} · {p.model} · {p.base_url}
+                    </span>
+                  </span>
+                  <button onClick={() => deleteProvider(p.id)} className="link-danger">
+                    Delete
+                  </button>
+                </li>
+              ))}
+            </ul>
           </div>
-        ) : (
+        )}
+
+        {showAddProvider && registry && (
           <form
-            className="row"
+            className="profile-form"
             onSubmit={(e) => {
               e.preventDefault();
-              void saveApiKey();
+              void saveProvider();
             }}
           >
-            <input
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
-              placeholder="sk-ant-..."
-              value={apiKeyDraft}
-              onChange={(e) => setApiKeyDraft(e.currentTarget.value)}
-            />
-            <button type="submit" disabled={apiKeyBusy || !apiKeyDraft.trim()}>
-              Save
-            </button>
+            <p className="muted small">
+              The API key is stored inside the SQLCipher-encrypted local store. OS keychain integration is deferred — see ADR 0008.
+            </p>
+            <label>
+              Provider
+              <select
+                value={providerForm.kind}
+                onChange={(e) =>
+                  setProviderForm((f) =>
+                    setRegistryDefaultsForKind(e.currentTarget.value as ProviderKind, f)
+                  )
+                }
+              >
+                {registry.providers.map((p) => (
+                  <option key={p.id} value={p.kind}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Friendly name
+              <input
+                value={providerForm.name}
+                onChange={(e) =>
+                  setProviderForm({ ...providerForm, name: e.currentTarget.value })
+                }
+                placeholder="e.g. anthropic-prod"
+              />
+            </label>
+            <label>
+              Base URL
+              <input
+                value={providerForm.base_url}
+                onChange={(e) =>
+                  setProviderForm({ ...providerForm, base_url: e.currentTarget.value })
+                }
+              />
+            </label>
+            <label>
+              Model
+              <select
+                value={providerForm.model}
+                onChange={(e) =>
+                  setProviderForm({ ...providerForm, model: e.currentTarget.value })
+                }
+              >
+                {(
+                  registry.providers.find((p) => p.kind === providerForm.kind)?.models ?? []
+                ).map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              API key
+              <input
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="sk-..."
+                value={providerForm.api_key}
+                onChange={(e) =>
+                  setProviderForm({ ...providerForm, api_key: e.currentTarget.value })
+                }
+                required
+              />
+            </label>
+            {providerError && (
+              <div className="status status-error">{providerError}</div>
+            )}
+            <div className="row">
+              <button type="submit" disabled={providerBusy || !providerForm.api_key}>
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddProvider(false);
+                  setProviderForm(defaultProviderForm(registry));
+                  setProviderError(null);
+                }}
+                className="link"
+              >
+                Cancel
+              </button>
+            </div>
           </form>
         )}
       </section>
@@ -489,12 +668,12 @@ function App() {
             <div className="row">
               <button
                 type="submit"
-                disabled={generating || !question.trim() || !apiKeySaved}
+                disabled={generating || !question.trim() || !activeProviderId}
               >
                 {generating ? "Generating…" : "Generate SQL"}
               </button>
-              {!apiKeySaved && (
-                <span className="muted small">Save an API key above first.</span>
+              {!activeProviderId && (
+                <span className="muted small">Configure a provider above first.</span>
               )}
             </div>
           </form>
