@@ -1,10 +1,15 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { resolve } from "path";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
-// https://vite.dev/config/
+// Two-window app (Phase 10 / ADR 0014):
+// - index.html       → main window (admin surface)
+// - widget.html      → floating widget window
+// Both are bundled into ../dist by `pnpm build`; Tauri's tauri.conf.json
+// references each by URL.
 export default defineConfig(async () => ({
   plugins: [react()],
 
@@ -27,6 +32,14 @@ export default defineConfig(async () => ({
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
+    },
+  },
+  build: {
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, "index.html"),
+        widget: resolve(__dirname, "widget.html"),
+      },
     },
   },
 }));
