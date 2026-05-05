@@ -1,6 +1,7 @@
 mod commands;
 mod extract;
 mod llm;
+mod retrieve;
 mod schema;
 mod sidecar;
 mod store;
@@ -43,6 +44,9 @@ pub fn run() {
             commands::test_connection,
             commands::extract_schema,
             commands::get_persisted_schema,
+            commands::embed_schema,
+            commands::clear_schema_embeddings,
+            commands::get_embedding_stats,
             commands::list_provider_configs,
             commands::create_provider_config,
             commands::delete_provider_config,

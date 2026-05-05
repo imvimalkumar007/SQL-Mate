@@ -9,7 +9,8 @@ use sqlx::{Column, ConnectOptions, Connection, Row};
 use tauri::State;
 
 use crate::extract::postgres::{self, PgConnectionParams};
-use crate::llm::{AnthropicProvider, OpenAIProvider, Provider, SqlGenerationRequest};
+use crate::llm::{embeddings as llm_embeddings, AnthropicProvider, OpenAIProvider, Provider, SqlGenerationRequest};
+use crate::retrieve;
 use crate::schema::SchemaModel;
 use crate::sidecar::{SidecarManager, ValidatedSql};
 use crate::store::{
@@ -20,6 +21,8 @@ const ROW_CAP: usize = 1_000;
 const QUERY_TIMEOUT_MS: u64 = 30_000;
 
 const SETTING_ACTIVE_PROVIDER: &str = "active_provider_id";
+
+const DEFAULT_EMBEDDING_MODEL: &str = "text-embedding-3-small";
 
 const MODEL_REGISTRY_JSON: &str = include_str!("../resources/model_registry.json");
 
@@ -150,6 +153,126 @@ pub async fn get_persisted_schema(
     }
 }
 
+// ---------- Schema embeddings (Phase 5) ----------
+
+#[derive(Debug, Serialize)]
+pub struct EmbeddingStats {
+    pub total_tables: usize,
+    pub embedded_count: i64,
+    pub model: Option<String>,
+    pub embedded_at: Option<i64>,
+    pub retrieval_threshold: usize,
+    pub retrieval_top_n: usize,
+}
+
+#[tauri::command]
+pub async fn get_embedding_stats(
+    connection_id: String,
+    store: State<'_, Store>,
+) -> Result<EmbeddingStats, String> {
+    let total = match store.get_schema(&connection_id).map_err(err)? {
+        Some(p) => {
+            let m: SchemaModel = serde_json::from_str(&p.model_json).map_err(err)?;
+            retrieve::total_table_count(&m)
+        }
+        None => 0,
+    };
+    let count = store.count_embeddings(&connection_id).map_err(err)?;
+    let (model, embedded_at) = if count > 0 {
+        let list = store.list_embeddings(&connection_id).map_err(err)?;
+        let first = list.first();
+        (
+            first.map(|e| e.model.clone()),
+            first.map(|e| e.embedded_at),
+        )
+    } else {
+        (None, None)
+    };
+    Ok(EmbeddingStats {
+        total_tables: total,
+        embedded_count: count,
+        model,
+        embedded_at,
+        retrieval_threshold: retrieve::RETRIEVAL_THRESHOLD,
+        retrieval_top_n: retrieve::RETRIEVAL_TOP_N,
+    })
+}
+
+#[tauri::command]
+pub async fn embed_schema(
+    connection_id: String,
+    embedding_model: Option<String>,
+    store: State<'_, Store>,
+) -> Result<EmbeddingStats, String> {
+    let pc = active_provider(&store).map_err(err)?;
+    if pc.kind == "anthropic" {
+        return Err(
+            "Anthropic does not provide an embeddings API. Configure an OpenAI \
+             or OpenAI-compatible provider as active and try again."
+                .to_string(),
+        );
+    }
+
+    let persisted = store
+        .get_schema(&connection_id)
+        .map_err(err)?
+        .ok_or_else(|| "No schema extracted yet for this connection.".to_string())?;
+    let model: SchemaModel = serde_json::from_str(&persisted.model_json).map_err(err)?;
+
+    let mut to_embed: Vec<(String, String)> = Vec::new();
+    for db_schema in &model.schemas {
+        for table in &db_schema.tables {
+            if table.excluded {
+                continue;
+            }
+            let qn = retrieve::qualified_name(&db_schema.name, &table.name);
+            let text = retrieve::embedding_text(&db_schema.name, table);
+            to_embed.push((qn, text));
+        }
+    }
+    if to_embed.is_empty() {
+        return Err("Schema has no tables to embed.".to_string());
+    }
+
+    let chosen_model = embedding_model.unwrap_or_else(|| DEFAULT_EMBEDDING_MODEL.to_string());
+    let texts: Vec<String> = to_embed.iter().map(|(_, t)| t.clone()).collect();
+    let vectors = llm_embeddings::embed_openai(&pc.api_key, &pc.base_url, &chosen_model, texts)
+        .await
+        .map_err(err)?;
+    if vectors.len() != to_embed.len() {
+        return Err(format!(
+            "provider returned {} embeddings for {} tables",
+            vectors.len(),
+            to_embed.len()
+        ));
+    }
+    let pairs: Vec<(String, Vec<f32>)> = to_embed
+        .into_iter()
+        .zip(vectors)
+        .map(|((qn, _), v)| (qn, v))
+        .collect();
+    store
+        .put_embeddings(&connection_id, &chosen_model, pairs)
+        .map_err(err)?;
+
+    get_embedding_stats(connection_id, store).await
+}
+
+#[tauri::command]
+pub async fn clear_schema_embeddings(
+    connection_id: String,
+    store: State<'_, Store>,
+) -> Result<(), String> {
+    store.clear_embeddings(&connection_id).map_err(err)
+}
+
+fn active_provider(store: &Store) -> Result<ProviderConfig, StoreError> {
+    let id = settings_get(store, SETTING_ACTIVE_PROVIDER)?
+        .ok_or_else(|| StoreError::Sqlite("no active provider configured".into()))?;
+    store.get_provider_config(&id)?
+        .ok_or_else(|| StoreError::Sqlite("active provider config no longer exists".into()))
+}
+
 // ---------- Settings helpers ----------
 
 fn settings_get(store: &Store, key: &str) -> Result<Option<String>, StoreError> {
@@ -270,8 +393,45 @@ pub async fn generate_sql(
             "No schema extracted yet for this connection. Click \"Extract schema\" first."
                 .to_string()
         })?;
-    let model: SchemaModel = serde_json::from_str(&persisted.model_json).map_err(err)?;
-    let schema_text = format_schema_for_prompt(&model);
+    let full_model: SchemaModel = serde_json::from_str(&persisted.model_json).map_err(err)?;
+
+    // Phase 5: above the retrieval threshold, narrow to top-N + FK neighborhood.
+    let model_for_prompt = if retrieve::total_table_count(&full_model) >= retrieve::RETRIEVAL_THRESHOLD {
+        let stored = store.list_embeddings(&connection_id).map_err(err)?;
+        if stored.is_empty() {
+            return Err(format!(
+                "Schema has {} tables (>= retrieval threshold {}). Click \"Generate embeddings\" before asking a question.",
+                retrieve::total_table_count(&full_model),
+                retrieve::RETRIEVAL_THRESHOLD,
+            ));
+        }
+        if pc.kind == "anthropic" {
+            return Err(
+                "Schema is too large to send in full and Anthropic does not provide an \
+                 embeddings API. Switch to an OpenAI or OpenAI-compatible provider for retrieval, \
+                 or shrink the schema (Phase 7 redaction)."
+                    .to_string(),
+            );
+        }
+        let embedding_model = stored[0].model.clone();
+        let q_vecs = llm_embeddings::embed_openai(
+            &pc.api_key,
+            &pc.base_url,
+            &embedding_model,
+            vec![question.clone()],
+        )
+        .await
+        .map_err(err)?;
+        let q_vec = q_vecs
+            .into_iter()
+            .next()
+            .ok_or_else(|| "embedding provider returned no vectors for the question".to_string())?;
+        retrieve::retrieve_relevant_schema(&full_model, &stored, &q_vec)
+    } else {
+        full_model
+    };
+
+    let schema_text = format_schema_for_prompt(&model_for_prompt);
 
     let req = SqlGenerationRequest {
         system_prompt: SYSTEM_PROMPT_PG.to_string(),

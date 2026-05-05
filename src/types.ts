@@ -98,3 +98,12 @@ export type ModelRegistry = {
   version: number;
   providers: ModelRegistryProvider[];
 };
+
+export type EmbeddingStats = {
+  total_tables: number;
+  embedded_count: number;
+  model: string | null;
+  embedded_at: number | null;
+  retrieval_threshold: number;
+  retrieval_top_n: number;
+};

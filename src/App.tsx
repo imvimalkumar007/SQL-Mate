@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 import type {
   ConnectionProfile,
+  EmbeddingStats,
   ExecutionResult,
   ModelRegistry,
   ProviderConfig,
@@ -95,6 +96,11 @@ function App() {
   const [executeError, setExecuteError] = useState<string | null>(null);
   const [results, setResults] = useState<ExecutionResult | null>(null);
 
+  // Embeddings
+  const [embeddingStats, setEmbeddingStats] = useState<EmbeddingStats | null>(null);
+  const [embeddingBusy, setEmbeddingBusy] = useState(false);
+  const [embeddingError, setEmbeddingError] = useState<string | null>(null);
+
   useEffect(() => {
     void refreshProviders();
     void invoke<ModelRegistry>("get_model_registry").then((r) => {
@@ -109,10 +115,13 @@ function App() {
     setExtractError(null);
     setGeneratedSql(null);
     setGenerateError(null);
+    setEmbeddingStats(null);
+    setEmbeddingError(null);
     if (!selectedId) return;
     void invoke<SchemaModel | null>("get_persisted_schema", { connectionId: selectedId })
       .then(setSchema)
       .catch((e) => setExtractError(String(e)));
+    void refreshEmbeddingStats(selectedId);
   }, [selectedId]);
 
   async function refreshProfiles() {
@@ -173,6 +182,45 @@ function App() {
   async function setActive(id: string) {
     await invoke("set_active_provider", { id });
     setActiveProviderId(id);
+  }
+
+  async function refreshEmbeddingStats(connectionId: string) {
+    try {
+      const s = await invoke<EmbeddingStats>("get_embedding_stats", {
+        connectionId,
+      });
+      setEmbeddingStats(s);
+    } catch (e) {
+      setEmbeddingError(String(e));
+    }
+  }
+
+  async function generateEmbeddings() {
+    if (!selectedId) return;
+    setEmbeddingBusy(true);
+    setEmbeddingError(null);
+    try {
+      const s = await invoke<EmbeddingStats>("embed_schema", {
+        connectionId: selectedId,
+      });
+      setEmbeddingStats(s);
+    } catch (e) {
+      setEmbeddingError(String(e));
+    } finally {
+      setEmbeddingBusy(false);
+    }
+  }
+
+  async function clearEmbeddings() {
+    if (!selectedId) return;
+    if (!confirm("Clear all stored embeddings for this connection?")) return;
+    setEmbeddingBusy(true);
+    try {
+      await invoke("clear_schema_embeddings", { connectionId: selectedId });
+      await refreshEmbeddingStats(selectedId);
+    } finally {
+      setEmbeddingBusy(false);
+    }
   }
 
   async function testConnection() {
@@ -608,6 +656,48 @@ function App() {
                 {tableCount} table{tableCount === 1 ? "" : "s"} · extracted{" "}
                 {new Date(schema.extracted_at * 1000).toLocaleString()}
               </p>
+              {embeddingStats && (
+                <div className="row" style={{ margin: "0.5rem 0", flexWrap: "wrap" }}>
+                  <span className="muted small">
+                    Embeddings: {embeddingStats.embedded_count}/{embeddingStats.total_tables}
+                    {embeddingStats.model && (
+                      <>
+                        {" "}· {embeddingStats.model}
+                        {embeddingStats.embedded_at && (
+                          <>
+                            {" "}· {new Date(embeddingStats.embedded_at * 1000).toLocaleString()}
+                          </>
+                        )}
+                      </>
+                    )}
+                    {embeddingStats.total_tables >= embeddingStats.retrieval_threshold && (
+                      <>
+                        {" "}· retrieval active (top-{embeddingStats.retrieval_top_n} + FK
+                        neighborhood)
+                      </>
+                    )}
+                  </span>
+                  <button
+                    onClick={generateEmbeddings}
+                    disabled={embeddingBusy || !activeProviderId}
+                    className="secondary"
+                  >
+                    {embeddingBusy
+                      ? "Embedding…"
+                      : embeddingStats.embedded_count > 0
+                      ? "Re-generate embeddings"
+                      : "Generate embeddings"}
+                  </button>
+                  {embeddingStats.embedded_count > 0 && (
+                    <button onClick={clearEmbeddings} className="link-danger">
+                      Clear
+                    </button>
+                  )}
+                </div>
+              )}
+              {embeddingError && (
+                <div className="status status-error">{embeddingError}</div>
+              )}
               <div className="schema-tree">
                 {schema.schemas.map((s) => (
                   <div key={s.name} className="schema-block">

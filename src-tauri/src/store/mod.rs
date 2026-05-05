@@ -1,4 +1,5 @@
 mod connection;
+pub mod embeddings;
 mod profiles;
 mod providers;
 mod schemas;

@@ -1,4 +1,5 @@
 pub mod anthropic;
+pub mod embeddings;
 pub mod openai;
 
 use serde::{Deserialize, Serialize};
