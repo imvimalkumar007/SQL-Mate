@@ -28,13 +28,13 @@ Wire up the Python sidecar with `sqlglot`. Generated SQL is validated for read-o
 
 **Done when:** The full loop works for Postgres: connect, extract, ask, see SQL, validate, run, see results. All without any row data touching the LLM call path. Validator rejects all non-`SELECT` statements in tests. — Verified end-to-end on Windows: Python 3.14 sidecar with `sqlglot==30.7.0`, layer-1 Rust pre-parse, layer-2 sqlglot AST walk, executor running in a `default_transaction_read_only` enforced transaction with 1000-row cap and 30 s timeout. See `PHASE_3_LOG.md`.
 
-## Phase 4 — Provider abstraction (current)
+## Phase 4 — Provider abstraction (done)
 
 Refactor the LLM client into the provider interface documented in `docs/architecture/llm-provider.md`. First-class support for Anthropic and OpenAI. OpenAI-compatible fallback for any base URL the user provides. Model registry loaded from a static JSON file.
 
-**Done when:** A user can switch between Anthropic, OpenAI, and a third provider (e.g., Groq via OpenAI-compatible) without restarting the app. API keys are stored in the OS keychain.
+**Done when:** A user can switch between Anthropic, OpenAI, and a third provider (e.g., Groq via OpenAI-compatible) without restarting the app. API keys are stored in the SQLCipher-encrypted local store. (The original done-when called for OS keychain storage; deferred to Phase 7 per ADR 0008. Closed enum dispatch instead of `Box<dyn LlmProvider>` per ADR 0010.) See `PHASE_4_LOG.md` for the build log.
 
-## Phase 5 — Schema retrieval for larger databases
+## Phase 5 — Schema retrieval for larger databases (current)
 
 Add embedding-based table retrieval for schemas with more than ~50 tables. Embeddings are computed locally if a local model is available, or via the configured LLM provider's embedding endpoint otherwise (still BYO key, still no row data).
 
