@@ -39,6 +39,12 @@ src-tauri/gen/
 .DS_Store
 Thumbs.db
 
+# Python sidecar virtualenv (set up by dev.ps1).
+sidecar/.venv/
+sidecar/__pycache__/
+sidecar/**/__pycache__/
+sidecar/**/*.pyc
+
 # Logs
 *.log
 logs/

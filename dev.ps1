@@ -90,6 +90,35 @@ Write-Host "  $cargoVersion"
 $linkExists = $null -ne (Get-Command link.exe -ErrorAction SilentlyContinue)
 Write-Host "  link.exe on PATH: $linkExists"
 
+# 4. Python sidecar venv. See docs/decisions/0009-python-sidecar-lifecycle.md.
+$venv = Join-Path $projectDir "sidecar\.venv"
+$venvScripts = Join-Path $venv "Scripts"
+$venvPython = Join-Path $venvScripts "python.exe"
+
+if (-not (Test-Path $venvPython)) {
+    $sysPython = (Get-Command python -ErrorAction SilentlyContinue).Source
+    if (-not $sysPython) {
+        $sysPython = (Get-Command py -ErrorAction SilentlyContinue).Source
+    }
+    if (-not $sysPython) {
+        throw "Python 3.11+ not found on PATH. Install from https://www.python.org/downloads/ before continuing."
+    }
+    Write-Host "Creating sidecar virtualenv at $venv ..."
+    & $sysPython -m venv $venv
+    if (-not (Test-Path $venvPython)) {
+        throw "Failed to create virtualenv at $venv"
+    }
+    Write-Host "Installing sidecar requirements ..."
+    & $venvPython -m pip install --quiet --disable-pip-version-check -r (Join-Path $projectDir "sidecar\requirements.txt")
+}
+
+if ($env:Path -notlike "*$venvScripts*") {
+    $env:Path = "$venvScripts;$env:Path"
+}
+$env:VIRTUAL_ENV = $venv
+$pythonVersion = (& $venvPython --version 2>&1) -join " "
+Write-Host "Python sidecar: $pythonVersion at $venv"
+
 Write-Host ""
 Write-Host "Dev env ready. Run cargo / pnpm tauri dev in this shell."
 
