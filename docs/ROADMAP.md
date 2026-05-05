@@ -40,13 +40,13 @@ Add embedding-based table retrieval for schemas with more than ~50 tables. Embed
 
 **Done when:** The app generates correct SQL on a 200-table benchmark schema with quality comparable to small-schema performance. — Phase 5 ships the **path** end to end: provider-endpoint embeddings (OpenAI / OpenAI-compatible), JSON-stored vectors, brute-force cosine, top-20 + FK neighborhood expansion, integration with `generate_sql`. The 200-table quality benchmark is genuinely deferred to Phase 9 (first five users) because we don't have a 200-table schema or a labeled question set to measure against. Local embedding model is a follow-up. See ADR 0011 and `PHASE_5_LOG.md`.
 
-## Phase 6 — Other dialects (current)
+## Phase 6 — Other dialects (done — Postgres + MySQL; SQLite + SQL Server deferred)
 
 Add MySQL, SQL Server, SQLite. Each requires its own extractor and dialect-aware validator settings. UI does not change meaningfully.
 
-**Done when:** All four dialects pass the Phase 3 done-when criterion.
+**Done when:** All four dialects pass the Phase 3 done-when criterion. — Phase 6 ships **MySQL** end-to-end (extractor, dispatcher, dialect dropdown). SQLite is deferred until the `sqlx-sqlite` × `rusqlite + bundled-sqlcipher` linker conflict is investigated; SQL Server is deferred until there's a real SQL Server to test against and a willingness to onboard `tiberius`. See ADR 0012 and `PHASE_6_LOG.md` for the named revisit conditions.
 
-## Phase 7 — Redaction and annotations
+## Phase 7 — Redaction and annotations (current)
 
 User can mark tables, columns, or schemas as excluded or sensitive. Sensitive entities are sent to the LLM with obfuscated names and de-obfuscated on the way back. User can write annotations on tables and columns that get included in the prompt to improve generation quality.
 
