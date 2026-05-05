@@ -4,15 +4,39 @@ The end-to-end flows that span multiple modules. Each is described from the user
 
 ## First-run setup
 
-1. User installs and launches the app.
-2. Welcome screen with three things: "What this is" (one paragraph), "What stays on your machine" (the security guarantees from `docs/SECURITY_MODEL.md`, abbreviated), and "Let's set up your first connection."
-3. User clicks continue.
-4. Connection setup screen. User picks a dialect, enters host/port/database/username/password, picks a friendly name. App tests the connection (a single `SELECT 1`). On success, password is written to the OS keychain and the connection profile is saved.
-5. App offers to extract the schema now or later. If now: extraction runs, summary is displayed.
-6. LLM provider setup screen. User picks a provider, enters an API key, picks a model. App tests with a single 1-token request to verify the key works.
-7. App lands on the main screen.
+Implemented in Phase 9 as a four-step wizard that takes over the window
+until the user finishes or skips. The wizard reads/writes a
+`onboarding_completed` row in the `settings` table; once `true`, the
+main screen renders instead.
 
-Modules involved: schema-extraction, schema-store, llm-provider.
+1. User installs and launches the app.
+2. **Welcome step.** "What this is" (one paragraph), "What stays on
+   your machine" (three bullets summarizing the security model), and a
+   "Continue" / "Skip onboarding" pair.
+3. **LLM provider step.** User picks a provider from the registry,
+   picks a model (defaults to the cheapest tier per ADR 0013), enters
+   an API key, gives the config a friendly name. The form reuses
+   `create_provider_config`; the active provider is set automatically
+   on first save.
+4. **Database connection step.** User picks a dialect, enters
+   host/port/database/username/password, picks a friendly name. "Test
+   connection" runs a single `SELECT 1` via `test_connection`. "Save
+   and continue" persists via `create_connection_profile`. Password is
+   stored in the SQLCipher-encrypted local store (keychain pending ADR
+   0008).
+5. **Schema extraction step.** Optional: "Extract now" runs
+   `extract_schema` immediately, "Skip for now" defers to the main
+   screen. Either way, the connection profile is already saved.
+6. **Done step.** Confirmation, with the names of the saved provider +
+   profile. "Finish" marks `onboarding_completed = true` and lands on
+   the main screen.
+
+Skip is available at every step except Done, and marks the flag
+without finishing — users land on a main screen with empty cards,
+which is the pre-Phase-9 experience.
+
+Modules involved: schema-extraction, schema-store, llm-provider,
+settings (`onboarding_completed`).
 
 ## Asking a question
 
@@ -137,12 +161,40 @@ Modules involved: schema-store, sql-validation, query-execution.
 
 ## Exporting for security review
 
-1. User opens settings → "Security review pack."
-2. App generates a PDF containing:
-   - The full security model from `docs/SECURITY_MODEL.md`
-   - The user's current configuration: which provider, which database, what is excluded/sensitive
-   - A network endpoints summary: every URL the app will contact, with frequency
-   - The exact SQL queries used for schema extraction (so a DBA can verify they only read metadata)
-3. User can hand this PDF to their security team.
+Implemented in Phase 9 via the `export_security_pdf` Tauri command and a
+"Security review pack" card at the bottom of the main screen.
 
-Modules involved: all.
+1. User clicks "Export security review PDF" on the Security review card.
+2. The backend reads the current connection profile, active provider
+   config, persisted schema (with annotations + redactions overlaid),
+   annotation list, redaction list, and telemetry-enabled flag — all
+   from the local store. Nothing is fetched.
+3. The `printpdf` builder composes the PDF in memory:
+   - Title page with timestamp + app version
+   - Security guarantees section (verbatim from `SECURITY_MODEL.md`)
+   - Current configuration: dialect, host:port, database, username,
+     provider name, kind, base URL, model, schema visibility (totals,
+     excluded tables, sensitive columns), annotations, telemetry state
+   - Network endpoints: provider base URL, database host:port, model
+     registry (bundled), telemetry (no endpoint), update server (none)
+   - Verbatim schema-extraction queries for Postgres and MySQL
+4. Bytes are written to `<app_data_dir>/sql-mate/security-review-<unix>.pdf`.
+   The path is surfaced back to the UI so the user can locate the file.
+
+Passwords and API keys are explicitly NOT in the PDF — the PDF marks
+them as "stored encrypted in SQLCipher local store; not included" so a
+reviewer knows where they live without seeing the values.
+
+Modules involved: security_pdf, store::profiles, store::providers,
+store::schemas, store::redactions.
+
+## Telemetry opt-in
+
+A "Settings" card on the main screen has a single toggle. Off by
+default. The toggle persists to a `telemetry_enabled` row in the
+`settings` table. As of this build no telemetry is sent regardless of
+the toggle — the surface is in place ahead of the future telemetry
+pipeline so users can opt in early and have their preference respected
+when the pipeline ships.
+
+Modules involved: settings (`telemetry_enabled`).

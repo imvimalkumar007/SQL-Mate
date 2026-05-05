@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
+import { Onboarding } from "./Onboarding";
 import type {
   ConnectionProfile,
   EmbeddingStats,
@@ -131,7 +132,18 @@ function App() {
   const [annotationDraft, setAnnotationDraft] = useState("");
   const [requestLog, setRequestLog] = useState<RequestLogEntry | null>(null);
 
+  // Phase 9: onboarding gate + settings
+  const [onboardingActive, setOnboardingActive] = useState<boolean | null>(null);
+  const [telemetryEnabled, setTelemetryEnabled] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfStatus, setPdfStatus] = useState<{ path: string; bytes: number } | null>(null);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+
   useEffect(() => {
+    void invoke<boolean>("get_onboarding_completed").then((done) => {
+      setOnboardingActive(!done);
+    });
+    void invoke<boolean>("get_telemetry_enabled").then(setTelemetryEnabled);
     void refreshProviders();
     void invoke<ModelRegistry>("get_model_registry").then((r) => {
       setRegistry(r);
@@ -351,6 +363,30 @@ function App() {
     }
   }
 
+  // Phase 9 settings handlers.
+  async function toggleTelemetry() {
+    const next = !telemetryEnabled;
+    await invoke("set_telemetry_enabled", { enabled: next });
+    setTelemetryEnabled(next);
+  }
+
+  async function exportSecurityPdf() {
+    setPdfBusy(true);
+    setPdfError(null);
+    setPdfStatus(null);
+    try {
+      const result = await invoke<{ path: string; byte_count: number }>(
+        "export_security_pdf",
+        { connectionId: selectedId },
+      );
+      setPdfStatus({ path: result.path, bytes: result.byte_count });
+    } catch (e) {
+      setPdfError(String(e));
+    } finally {
+      setPdfBusy(false);
+    }
+  }
+
   async function testConnection() {
     setFormBusy(true);
     setTestStatus(null);
@@ -490,12 +526,29 @@ function App() {
     ? schema.schemas.reduce((acc, s) => acc + s.tables.length, 0)
     : 0;
 
+  if (onboardingActive === null) {
+    return null;
+  }
+  if (onboardingActive) {
+    return (
+      <Onboarding
+        registry={registry}
+        onComplete={() => {
+          setOnboardingActive(false);
+          void refreshProviders();
+          void refreshProfiles();
+        }}
+      />
+    );
+  }
+
   return (
     <main className="container">
       <h1>SQL Mate</h1>
       <p className="subtitle">
-        Phase 2 — live Postgres extraction, SQLCipher-encrypted local store. OS
-        keychain integration deferred to Phase 7 (see PHASE_2_LOG.md).
+        Local-first natural-language SQL. Row data never leaves this machine.
+        See the security review pack at the bottom of this page for the audit
+        trail.
       </p>
 
       <section className="card">
@@ -1210,6 +1263,53 @@ function App() {
           )}
         </section>
       )}
+
+      <section className="card">
+        <h2>Settings</h2>
+        <div className="setting-row">
+          <div className="setting-text">
+            <strong>Telemetry</strong>
+            <p className="muted small">
+              Off by default. If enabled, future versions of the app may
+              send anonymous usage counts (e.g. number of queries
+              generated, error categories). Telemetry never includes
+              schema names, query text, or any database content. As of
+              this build no telemetry is sent regardless of this toggle —
+              the toggle is a placeholder for the future telemetry
+              pipeline so you can opt in early.
+            </p>
+          </div>
+          <button
+            className={`toggle-chip${telemetryEnabled ? " on" : ""}`}
+            onClick={() => void toggleTelemetry()}
+          >
+            {telemetryEnabled ? "ON" : "OFF"}
+          </button>
+        </div>
+      </section>
+
+      <section className="card">
+        <h2>Security review pack</h2>
+        <p className="muted small">
+          Generates a PDF you can hand to a security or compliance
+          reviewer. The PDF contains the security model, your current
+          configuration (database, provider, redaction state), every
+          network endpoint the app contacts, and the verbatim SQL used
+          for schema extraction. Built locally; nothing is fetched.
+        </p>
+        <div className="row">
+          <button onClick={() => void exportSecurityPdf()} disabled={pdfBusy}>
+            {pdfBusy ? "Building PDF…" : "Export security review PDF"}
+          </button>
+        </div>
+        {pdfStatus && (
+          <div className="status status-ok">
+            Saved {(pdfStatus.bytes / 1024).toFixed(1)} KB to:{" "}
+            <code>{pdfStatus.path}</code>
+          </div>
+        )}
+        {pdfError && <div className="status status-error">{pdfError}</div>}
+      </section>
     </main>
   );
 }

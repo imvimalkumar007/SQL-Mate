@@ -15,6 +15,7 @@ use crate::redact::{apply_overlay, Obfuscator};
 use crate::request_log::{RequestLog, RequestLogEntry};
 use crate::retrieve;
 use crate::schema::SchemaModel;
+use crate::security_pdf;
 use crate::sidecar::{SidecarManager, ValidatedSql};
 use crate::store::{
     Annotation, ConnectionProfile, HistoryEntry, NewConnectionProfile, NewProviderConfig,
@@ -25,6 +26,9 @@ const ROW_CAP: usize = 1_000;
 const QUERY_TIMEOUT_MS: u64 = 30_000;
 
 const SETTING_ACTIVE_PROVIDER: &str = "active_provider_id";
+const SETTING_TELEMETRY_ENABLED: &str = "telemetry_enabled";
+const SETTING_ONBOARDING_COMPLETED: &str = "onboarding_completed";
+const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const DEFAULT_EMBEDDING_MODEL: &str = "text-embedding-3-small";
 
@@ -1081,6 +1085,135 @@ pub async fn get_last_request_log(
     request_log: State<'_, RequestLog>,
 ) -> Result<Option<RequestLogEntry>, String> {
     Ok(request_log.last(&connection_id))
+}
+
+// ---------- Telemetry opt-in (Phase 9) ----------
+
+#[tauri::command]
+pub async fn get_telemetry_enabled(store: State<'_, Store>) -> Result<bool, String> {
+    Ok(settings_get(&store, SETTING_TELEMETRY_ENABLED)
+        .map_err(err)?
+        .as_deref()
+        == Some("true"))
+}
+
+#[tauri::command]
+pub async fn set_telemetry_enabled(
+    enabled: bool,
+    store: State<'_, Store>,
+) -> Result<(), String> {
+    settings_set(
+        &store,
+        SETTING_TELEMETRY_ENABLED,
+        if enabled { "true" } else { "false" },
+    )
+    .map_err(err)
+}
+
+// ---------- First-run onboarding (Phase 9) ----------
+
+#[tauri::command]
+pub async fn get_onboarding_completed(store: State<'_, Store>) -> Result<bool, String> {
+    Ok(settings_get(&store, SETTING_ONBOARDING_COMPLETED)
+        .map_err(err)?
+        .as_deref()
+        == Some("true"))
+}
+
+#[tauri::command]
+pub async fn mark_onboarding_completed(store: State<'_, Store>) -> Result<(), String> {
+    settings_set(&store, SETTING_ONBOARDING_COMPLETED, "true").map_err(err)
+}
+
+// ---------- Security review PDF (Phase 9) ----------
+
+#[derive(Debug, Serialize)]
+pub struct SecurityPdfResult {
+    /// Absolute path the PDF was written to. Surfaced to the UI so the user
+    /// can locate the file (we don't ship a "show in folder" plugin in v1).
+    pub path: String,
+    pub byte_count: usize,
+}
+
+#[tauri::command]
+pub async fn export_security_pdf(
+    connection_id: Option<String>,
+    store: State<'_, Store>,
+    app: tauri::AppHandle,
+) -> Result<SecurityPdfResult, String> {
+    use tauri::Manager;
+
+    let profile_owned = if let Some(id) = connection_id.as_deref() {
+        store.get_profile(id).map_err(err)?
+    } else {
+        None
+    };
+
+    let provider_owned = match settings_get(&store, SETTING_ACTIVE_PROVIDER).map_err(err)? {
+        Some(id) => store.get_provider_config(&id).map_err(err)?,
+        None => None,
+    };
+
+    let schema_owned: Option<SchemaModel> = match connection_id.as_deref() {
+        Some(id) => match store.get_schema(id).map_err(err)? {
+            Some(p) => {
+                let mut model: SchemaModel =
+                    serde_json::from_str(&p.model_json).map_err(err)?;
+                let anns = store.list_annotations(id).map_err(err)?;
+                let reds = store.list_redactions(id).map_err(err)?;
+                apply_overlay(&mut model, &anns, &reds);
+                Some(model)
+            }
+            None => None,
+        },
+        None => None,
+    };
+
+    let annotations = match connection_id.as_deref() {
+        Some(id) => store.list_annotations(id).map_err(err)?,
+        None => Vec::new(),
+    };
+    let redactions = match connection_id.as_deref() {
+        Some(id) => store.list_redactions(id).map_err(err)?,
+        None => Vec::new(),
+    };
+
+    let telemetry_enabled = settings_get(&store, SETTING_TELEMETRY_ENABLED)
+        .map_err(err)?
+        .as_deref()
+        == Some("true");
+
+    let now = time::OffsetDateTime::now_utc();
+    let generated_at_iso = now
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap_or_else(|_| now.to_string());
+
+    let inputs = security_pdf::PdfInputs {
+        app_version: APP_VERSION,
+        generated_at_iso: &generated_at_iso,
+        profile: profile_owned.as_ref(),
+        provider: provider_owned.as_ref(),
+        schema: schema_owned.as_ref(),
+        annotations: &annotations,
+        redactions: &redactions,
+        telemetry_enabled,
+    };
+    let pdf_bytes = security_pdf::build_security_pdf(&inputs)?;
+
+    let dir = app
+        .path()
+        .data_dir()
+        .map_err(|e| format!("data dir: {e}"))?
+        .join("sql-mate");
+    std::fs::create_dir_all(&dir).map_err(err)?;
+    let stamp = now.unix_timestamp();
+    let out_path = dir.join(format!("security-review-{stamp}.pdf"));
+    std::fs::write(&out_path, &pdf_bytes).map_err(err)?;
+
+    Ok(SecurityPdfResult {
+        path: out_path.to_string_lossy().into_owned(),
+        byte_count: pdf_bytes.len(),
+    })
 }
 
 fn format_schema_for_prompt(model: &SchemaModel) -> String {

@@ -1,0 +1,115 @@
+# Phase 9: cross-OS unsigned build verification.
+#
+# Builds the Tauri app on macOS, Windows, and Linux on every push and pull
+# request. Uploads the resulting installer artifacts so the team can manually
+# smoke-test on each OS without owning that hardware.
+#
+# Signing is intentionally NOT done here — Phase 9b covers Apple notarization,
+# Windows Authenticode, and Linux deb signing, all of which need real-world
+# accounts and certificates. Until then this workflow produces unsigned
+# installers and lets us at least confirm the build graph is clean on every
+# OS.
+
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.platform.name }}
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - name: macOS (arm64)
+            runner: macos-latest
+            artifact-glob: "src-tauri/target/release/bundle/dmg/*.dmg"
+          - name: Linux (x86_64)
+            runner: ubuntu-latest
+            artifact-glob: |
+              src-tauri/target/release/bundle/appimage/*.AppImage
+              src-tauri/target/release/bundle/deb/*.deb
+          - name: Windows (x86_64)
+            runner: windows-latest
+            artifact-glob: |
+              src-tauri/target/release/bundle/msi/*.msi
+              src-tauri/target/release/bundle/nsis/*.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build deps
+        if: matrix.platform.runner == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Set up Python (sidecar)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install sidecar Python deps
+        run: |
+          python -m venv sidecar/.venv
+          ${{ matrix.platform.runner == 'windows-latest' && 'sidecar\\.venv\\Scripts\\python -m pip install -r sidecar/requirements.txt' || 'sidecar/.venv/bin/python -m pip install -r sidecar/requirements.txt' }}
+        shell: bash
+
+      - name: Build (unsigned)
+        env:
+          # Reduces parallelism on Windows specifically; the `windows` crate
+          # OOMs rustc otherwise on the GHA windows-latest runner.
+          CARGO_BUILD_JOBS: ${{ matrix.platform.runner == 'windows-latest' && '1' || '' }}
+        run: pnpm tauri build
+
+      - name: Upload installer artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sql-mate-${{ matrix.platform.runner }}
+          path: ${{ matrix.platform.artifact-glob }}
+          if-no-files-found: warn
+          retention-days: 14

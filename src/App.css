@@ -250,6 +250,59 @@ button.link-danger:hover { color: #b91c1c; background: transparent; }
 }
 .results-table tbody tr:hover { background: #fafafa; }
 
+/* Onboarding wizard — Phase 9 */
+.onboarding {
+  max-width: 720px;
+  margin: 0 auto;
+}
+.onboarding-progress {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 0.5rem 0 1rem;
+  font-size: 0.8rem;
+}
+.onboarding-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  background: #f5f5f5;
+  color: #737373;
+}
+.onboarding-step.active { background: #eff6ff; color: #1e40af; font-weight: 600; }
+.onboarding-step.done { background: #dcfce7; color: #166534; }
+.onboarding label {
+  display: block;
+  margin: 0.4rem 0;
+  font-size: 0.9rem;
+}
+.onboarding label input,
+.onboarding label select,
+.onboarding label textarea {
+  display: block;
+  width: 100%;
+  margin-top: 0.2rem;
+}
+.onboarding ul {
+  padding-left: 1.2rem;
+  margin: 0.6rem 0;
+}
+.onboarding li { margin-bottom: 0.4rem; }
+
+/* Settings rows — Phase 9 */
+.setting-row {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.setting-text { flex: 1; }
+.setting-text strong { display: block; margin-bottom: 0.2rem; }
+.setting-text p { margin: 0; }
+
 /* Redaction + annotations — Phase 8 */
 .redaction-summary {
   font-size: 0.8rem;
@@ -428,6 +481,9 @@ button.link-danger:hover { color: #b91c1c; background: transparent; }
   .picker-dropdown { background: #262626; border-color: #404040; }
   .picker-model:hover { background: #1a1a1a; }
   .picker-model.active { background: #1e3a8a; color: #c7d2fe; }
+  .onboarding-step { background: #262626; color: #a3a3a3; }
+  .onboarding-step.active { background: #1e3a8a; color: #c7d2fe; }
+  .onboarding-step.done { background: #064e3b; color: #a7f3d0; }
   .cost-tier.cost-low { background: #064e3b; color: #a7f3d0; }
   .cost-tier.cost-mid { background: #713f12; color: #fde68a; }
   .cost-tier.cost-high { background: #450a0a; color: #fecaca; }
