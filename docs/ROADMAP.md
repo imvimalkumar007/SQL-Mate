@@ -60,7 +60,7 @@ User can mark tables, columns, or schemas as excluded or sensitive. Sensitive en
 
 **Done when:** A user can extract a schema, mark three tables as excluded and two columns as sensitive, ask a question, and verify in the request log that the excluded tables are absent and the sensitive columns are obfuscated.
 
-## Phase 9 — Polish and packaging (current)
+## Phase 9 — Polish and packaging
 
 Signed installers for macOS (notarized), Windows (Authenticode), Linux (AppImage and deb). First-run onboarding flow. In-app documentation pack for security review. Settings UI for telemetry opt-in. UX overhaul.
 
@@ -80,7 +80,23 @@ This phase is split into 9a (in-app, shipped) and 9b (real-world signing infrast
 
 - **9b — blocked on real-world resources:** macOS notarization (Apple Developer Program account, Mac builder); Windows Authenticode (code-signing cert from a CA); Linux deb GPG signing; distribution channels (Homebrew, winget, apt repo). See `docs/PHASE_9B_DEFERRED.md` for the named revisit conditions.
 
-## Phase 10 — First five users
+## Phase 10 — Windows widget mode (current)
+
+Floating widget as the primary UI on Windows, summoned by a global hotkey, backed by a system tray icon. Implements ADR 0014. The existing main window stays as the admin surface (settings, schema review, redaction, history); the widget is for the hot path (ask → SQL → copy).
+
+**Done when:** A user on Windows can press `Ctrl+Shift+Space`, see the widget appear with the textarea focused, type a question, get validated SQL back, copy it, and dismiss the widget — all without the widget ever being more than two clicks away from the IDE underneath. The widget renders all six states from the design spec (default, streaming-as-spinner, generated, validation error, empty/no-schema, pill collapsed). Position, last question, and last generated SQL persist across launches.
+
+Streaming SQL output is explicitly out of scope for Phase 10 — the "Streaming" state in the design spec is implemented as a single spinner. Token-by-token streaming would touch the LLM provider abstraction; revisit in a follow-up phase if user feedback shows it matters.
+
+See `docs/PHASE_10_KICKOFF.md` for the full kickoff doc.
+
+## Phase 11 — Widget polish
+
+Multi-monitor position memory, hotkey customization UI, auto-start on Windows boot, and any other widget polish that surfaces from real use of Phase 10. Each item is listed in `docs/PHASE_10_KICKOFF.md` under "What this phase does not deliver" — Phase 11 is where they land.
+
+**Done when:** the rough edges from Phase 10 (single-monitor only, hardcoded hotkey, no auto-start) are addressed and the widget feels native on Windows — opens after reboot, restores to the right monitor, doesn't conflict with other apps' hotkeys.
+
+## Phase 12 — First five users
 
 Get five target users (regulated mid-market data engineers) using the app weekly. Iterate based on what they actually struggle with. Do not add features that no user asked for.
 
