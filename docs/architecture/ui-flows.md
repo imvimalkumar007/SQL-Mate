@@ -59,14 +59,44 @@ Modules involved: query-execution.
 
 1. User opens the schema panel.
 2. UI shows a tree: schemas → tables → columns.
-3. For each table or column, the user can:
-   - Add an annotation ("This is the canonical customer record. Use this not the legacy `cust` table.")
-   - Mark as excluded (never included in any LLM call)
-   - Mark as sensitive (included with obfuscated name)
-4. Changes are persisted to the schema store immediately.
-5. A summary at the top: "24 tables visible, 3 excluded, 2 sensitive."
+3. v1 (Phase 8) simplification — `excluded` and `sensitive` apply at
+   different granularities to keep the obfuscation pipeline simple:
+   - **Tables** can be marked **excluded** ("exclude" chip on the
+     table summary). Excluded tables are omitted from the prompt
+     entirely.
+   - **Tables** can be **annotated** ("add note" chip). The note is
+     included in the prompt as a `-- comment` next to the table.
+   - **Columns** can be marked **sensitive** ("mark sensitive" chip).
+     Sensitive columns keep their data type and FK relationships in
+     the prompt but their *name* is replaced with a stable placeholder
+     (`r_c_1`, `r_c_2`, …) for the request, then the LLM's response
+     is de-obfuscated on the way back.
+   - **Columns** can be **annotated** the same way as tables.
+4. Changes are persisted to the local store immediately and the schema
+   tree refetches so the user sees the new state.
+5. A summary at the top: "24 tables, 3 excluded, 2 sensitive columns."
 
-Modules involved: schema-store.
+Modules involved: store::redactions, redact (overlay + obfuscator).
+
+## Auditing what went to the model
+
+After every successful generation, a "Request log" details element
+appears below the SQL on the "Ask a question" card. Expanding it shows:
+
+- The model and provider kind, plus a timestamp.
+- The list of excluded tables (if any).
+- The system prompt as sent.
+- The user message as sent — *including the obfuscated column names*.
+  This is the bytes that traveled the wire, not the pre-obfuscation
+  view, so the user can verify Phase 8's done-when criterion: excluded
+  tables are absent and sensitive column names are placeholders.
+
+The log is in-memory only, last-request per connection, cleared on
+restart. Persistence and a multi-request browser are out of scope for
+v1 — `history` row metadata covers the user's "what did I ask
+before" need.
+
+Modules involved: request_log.
 
 ## Re-extracting schema
 
