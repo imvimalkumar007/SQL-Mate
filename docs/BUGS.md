@@ -20,11 +20,77 @@ SELECT in both `postgres` and `mysql` dialects).
 
 ---
 
+## Resolution log
+
+Most-recent first. Each entry covers one round of fixes against the bugs in
+this file. Mention the bug numbers below that the entry resolves and link to
+the commit hashes once landed.
+
+### 2026-05-05 — Phase 6.5 fix pass (before Phase 7)
+
+Closes bugs #1, #2, #3, and the addressable portion of #4.
+
+- **Bug #1 (validator dialect):** `validate_sql` and `execute_query` now
+  fetch the connection profile and pass `profile.dialect` to
+  `sidecar.validate(...)` instead of the hardcoded `"postgres"` string.
+  layer-1 prevalidation runs before the profile lookup so dialect-agnostic
+  rejections still short-circuit early.
+- **Bug #2 (execute_query MySQL):** `execute_query` now dispatches on
+  `profile.dialect` to a per-dialect helper:
+  - `execute_postgres` keeps the original `PgConnectOptions` +
+    `SET default_transaction_read_only` + `SET statement_timeout` shape.
+  - `execute_mysql` uses `MySqlConnectOptions`, sets
+    `SET SESSION TRANSACTION READ ONLY`, and best-effort sets
+    `MAX_EXECUTION_TIME` (MySQL 5.7.4+ only — failure ignored so MariaDB
+    still runs read-only without timeout enforcement, with the read-only
+    role remaining the primary control).
+  - Each helper has its own `decode_*_value(row, i)` function so the
+    sqlx generic decode chain stays statically typed against the right `Row`.
+- **Bug #3 (history dead path):** new `store::history` module with
+  `record_history`, `update_history_validation`, `update_history_execution`,
+  `list_history`, `clear_history`. `generate_sql` now writes a row at
+  generation time and returns `{sql, history_id}`. `validate_sql` and
+  `execute_query` accept an optional `history_id` and update the row's
+  validation status / execution metrics if provided. New Tauri commands
+  `list_history` and `clear_history` expose the table for the future
+  in-app history view (Phase 7+). Frontend threads `history_id` through
+  generate → validate → run.
+- **Bug #4 (extended decoders):** `sqlx-postgres` and `sqlx-mysql` are now
+  declared as direct dependencies (alongside the `sqlx` umbrella) with
+  `time` + `uuid` features enabled. Going through the umbrella crate's
+  type features pulled `sqlx-sqlite` into the dep graph because sqlx 0.8.6
+  doesn't gate `sqlx-sqlite?/time` behind the `?` optional-dep gate;
+  `sqlx-sqlite` then collided with `rusqlite + bundled-sqlcipher` over
+  `libsqlite3-sys` (the same ADR 0012 §4 collision). The per-driver
+  declaration sidesteps the cascade. `decode_pg_value` now handles
+  `OffsetDateTime`, `PrimitiveDateTime`, `Date`, `Time`, and `Uuid`;
+  `decode_mysql_value` handles the same date/time set plus signed/unsigned
+  integers and a binary-bytes fallback. `json` was *not* enabled — see the
+  Cargo.toml comment and the still-open portion of #4 below.
+
+**Verification:**
+- `cargo check` clean — 8.36 s incremental, 5 pre-existing dead-code warnings,
+  zero new warnings from any of the changes.
+- `pnpm build` (TS + Vite) clean — 709 ms, 5.80 KB CSS / 208.57 KB JS.
+- Frontend types + call sites updated in `src/types.ts` and `src/App.tsx`.
+
+**Carried forward** to a later round:
+- JSON / JSONB columns still render via the String fallback (Postgres returns
+  them as text at the wire level when the json feature is off, so they're
+  legible — just not parsed into structured `serde_json::Value`). Unblocking
+  this needs the libsqlite3-sys collision resolved per ADR 0012 §4 *or* a
+  `[patch.crates-io]` workaround for `sqlx-sqlite`.
+- Dead-code warnings (#12) untouched. Will revisit when Phase 7's redaction
+  layer either uses `ProviderCapabilities` / sidecar `Ping` or proves them
+  removable.
+
+---
+
 ## Confirmed bugs
 
-### 1. Validator dialect hardcoded as `"postgres"` for MySQL connections
+### 1. Validator dialect hardcoded as `"postgres"` for MySQL connections — **fixed 2026-05-05**
 
-**Status:** bug
+**Status:** ~~bug~~ **resolved** (see resolution log)
 **Location:** [src-tauri/src/commands.rs:493](src-tauri/src/commands.rs#L493), [src-tauri/src/commands.rs:552](src-tauri/src/commands.rs#L552)
 
 Both `validate_sql` and `execute_query` invoke
@@ -38,9 +104,9 @@ records dialect per profile and `extract::dispatch_extract_schema` already
 uses it. Five-line change. Already noted as a Phase 6 follow-up in
 [PHASE_6_LOG.md](PHASE_6_LOG.md) §"Operational notes".
 
-### 2. `execute_query` is Postgres-only
+### 2. `execute_query` is Postgres-only — **fixed 2026-05-05**
 
-**Status:** bug
+**Status:** ~~bug~~ **resolved** (see resolution log)
 **Location:** [src-tauri/src/commands.rs:561-603](src-tauri/src/commands.rs#L561-L603)
 
 `execute_query` always builds a `PgConnectOptions`, runs the
@@ -56,9 +122,9 @@ rows don't decode through the `decode_value(PgRow)` helper.
 `decode_mysql_value(MySqlRow)`. This was missed when Phase 6 stopped at the
 extractor side; the MySQL win is incomplete until run-query also dispatches.
 
-### 3. `history` table is created but never written to
+### 3. `history` table is created but never written to — **fixed 2026-05-05**
 
-**Status:** bug (dead code path)
+**Status:** ~~bug (dead code path)~~ **resolved** (see resolution log)
 **Location:** [src-tauri/migrations/0001_initial_schema.sql:46](src-tauri/migrations/0001_initial_schema.sql#L46) — table; no Rust code matches `history`.
 
 Migration 0001 creates a `history` table for past questions / generated SQL /
@@ -71,20 +137,22 @@ behind the telemetry-opt-in pattern.
 view. Removing the table is the wrong call — it's cheap to keep an empty table
 and the migration is forward-only.
 
-### 4. Generated SQL renders Postgres timestamp / UUID / JSON columns as `<unsupported type: ...>`
+### 4. Generated SQL renders Postgres timestamp / UUID / JSON columns as `<unsupported type: ...>` — **partially fixed 2026-05-05**
 
-**Status:** limitation (Phase 3 deferral)
-**Location:** [src-tauri/src/commands.rs:620-649](src-tauri/src/commands.rs#L620-L649)
+**Status:** ~~limitation~~ **partially resolved** (see resolution log)
 
-`decode_value` only attempts `i32`, `i64`, `bool`, `f32`, `f64`, `String`. For
-`TIMESTAMPTZ`, `DATE`, `UUID`, `JSONB`, and other Postgres-native types, sqlx
-needs the `time`, `uuid`, and `json` features enabled and the corresponding
-match arms added. The fallback emits a `Value::String("<unsupported type: ...>")`
-so the user sees that something rendered but can't read the value.
+Postgres TIMESTAMPTZ / TIMESTAMP / DATE / TIME / UUID and the equivalent
+MySQL date/time types now render correctly. JSON / JSONB columns still fall
+through to the String fallback (Postgres returns the text representation at
+the wire level, so they're legible — just not parsed into structured
+`serde_json::Value`).
 
-**Fix:** add `sqlx` features `time`, `uuid`, `json` and extend `decode_value`.
-Already flagged in [PHASE_3_LOG.md](PHASE_3_LOG.md). Bundle with the Phase 8
-polish pass.
+The remaining JSON gap is blocked on the libsqlite3-sys collision documented
+in ADR 0012 §4: enabling sqlx's `json` feature pulls `sqlx-sqlite` into the
+dep graph, which collides with rusqlite's `bundled-sqlcipher` build of
+libsqlite3-sys. Resolving it requires either a `[patch.crates-io]`
+workaround for `sqlx-sqlite` or the same dual-SQLite reproduction the ADR
+already deferred. Reopen as a fresh entry if a user actually runs into it.
 
 ---
 

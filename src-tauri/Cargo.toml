@@ -23,8 +23,15 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # HTTP client. Pinned, minimal features. See docs/decisions/0005-reqwest-for-http.md.
 reqwest = { version = "=0.13.3", default-features = false, features = ["rustls", "json"] }
-# Postgres driver. Pinned, minimal features. See docs/decisions/0006-sqlx-for-postgres.md.
+# Postgres + MySQL drivers. Pinned. See docs/decisions/0006-sqlx-for-postgres.md.
+# Phase 6 follow-up (BUGS.md #4): the type features `time` and `uuid` are
+# enabled on sqlx-postgres / sqlx-mysql DIRECTLY rather than through the sqlx
+# umbrella crate. The umbrella's type features cascade to sqlx-sqlite
+# unconditionally in 0.8.6, which would require libsqlite3-sys 0.30.x and
+# collide with rusqlite's libsqlite3-sys 0.37.x (ADR 0012 §4).
 sqlx = { version = "=0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres", "mysql"] }
+sqlx-postgres = { version = "=0.8.6", default-features = false, features = ["time", "uuid"] }
+sqlx-mysql = { version = "=0.8.6", default-features = false, features = ["time"] }
 # Local encrypted store. Pinned. See docs/decisions/0007-sqlcipher-for-local-store.md.
 rusqlite = { version = "=0.39.0", features = ["bundled-sqlcipher-vendored-openssl"] }
 # NOTE: keyring removed in Phase 2 follow-up. set_password silently failed to

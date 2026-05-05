@@ -4,6 +4,7 @@ use futures::stream::StreamExt;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sqlx::mysql::{MySqlConnectOptions, MySqlRow};
 use sqlx::postgres::{PgConnectOptions, PgRow};
 use sqlx::{Column, ConnectOptions, Connection, Row};
 use tauri::State;
@@ -14,7 +15,7 @@ use crate::retrieve;
 use crate::schema::SchemaModel;
 use crate::sidecar::{SidecarManager, ValidatedSql};
 use crate::store::{
-    ConnectionProfile, NewConnectionProfile, NewProviderConfig, ProviderConfig, Store, StoreError,
+    ConnectionProfile, HistoryEntry, NewConnectionProfile, NewProviderConfig, ProviderConfig, Store, StoreError,
 };
 
 const ROW_CAP: usize = 1_000;
@@ -372,12 +373,18 @@ pub async fn get_model_registry() -> Result<Value, String> {
 
 // ---------- SQL generation against the persisted schema ----------
 
+#[derive(Debug, Serialize)]
+pub struct GenerationResult {
+    pub sql: String,
+    pub history_id: String,
+}
+
 #[tauri::command]
 pub async fn generate_sql(
     connection_id: String,
     question: String,
     store: State<'_, Store>,
-) -> Result<String, String> {
+) -> Result<GenerationResult, String> {
     let active_id = settings_get(&store, SETTING_ACTIVE_PROVIDER)
         .map_err(err)?
         .ok_or_else(|| {
@@ -446,7 +453,10 @@ pub async fn generate_sql(
     };
 
     let resp = provider.generate_sql(req).await.map_err(err)?;
-    Ok(resp.sql)
+    let history_id = store
+        .record_history(&connection_id, &question, Some(&resp.sql))
+        .map_err(err)?;
+    Ok(GenerationResult { sql: resp.sql, history_id })
 }
 
 fn build_provider(c: &ProviderConfig) -> Provider {
@@ -475,11 +485,21 @@ fn build_provider(c: &ProviderConfig) -> Provider {
 pub async fn validate_sql(
     connection_id: String,
     sql: String,
+    history_id: Option<String>,
     store: State<'_, Store>,
     sidecar: State<'_, SidecarManager>,
 ) -> Result<ValidatedSql, String> {
-    layer1_prevalidate(&sql).map_err(|m| m.to_string())?;
+    if let Err(m) = layer1_prevalidate(&sql) {
+        if let Some(hid) = history_id.as_deref() {
+            let _ = store.update_history_validation(hid, "invalid", Some(m));
+        }
+        return Err(m.to_string());
+    }
 
+    let profile = store
+        .get_profile(&connection_id)
+        .map_err(err)?
+        .ok_or_else(|| "connection profile not found".to_string())?;
     let persisted = store
         .get_schema(&connection_id)
         .map_err(err)?
@@ -489,10 +509,20 @@ pub async fn validate_sql(
         })?;
     let schema_value: Value = serde_json::from_str(&persisted.model_json).map_err(err)?;
 
-    sidecar
-        .validate("postgres", &sql, schema_value)
-        .await
-        .map_err(err)
+    let result = sidecar.validate(&profile.dialect, &sql, schema_value).await;
+
+    if let Some(hid) = history_id.as_deref() {
+        match &result {
+            Ok(_) => {
+                let _ = store.update_history_validation(hid, "valid", None);
+            }
+            Err(e) => {
+                let _ = store.update_history_validation(hid, "invalid", Some(&e.to_string()));
+            }
+        }
+    }
+
+    result.map_err(err)
 }
 
 /// Cheap Rust-side syntactic check that rejects obvious mutating queries
@@ -536,6 +566,7 @@ pub struct ExecutionResult {
 pub async fn execute_query(
     connection_id: String,
     sql: String,
+    history_id: Option<String>,
     store: State<'_, Store>,
     sidecar: State<'_, SidecarManager>,
 ) -> Result<ExecutionResult, String> {
@@ -543,21 +574,46 @@ pub async fn execute_query(
     // query whose validation has expired (schema re-extracted) or that was
     // edited between validate and run.
     layer1_prevalidate(&sql).map_err(|m| m.to_string())?;
+    let profile = store
+        .get_profile(&connection_id)
+        .map_err(err)?
+        .ok_or_else(|| "connection profile not found".to_string())?;
     let persisted = store
         .get_schema(&connection_id)
         .map_err(err)?
         .ok_or_else(|| "No schema extracted for this connection.".to_string())?;
     let schema_value: Value = serde_json::from_str(&persisted.model_json).map_err(err)?;
     let validated = sidecar
-        .validate("postgres", &sql, schema_value)
+        .validate(&profile.dialect, &sql, schema_value)
         .await
         .map_err(err)?;
 
-    let profile = store
-        .get_profile(&connection_id)
-        .map_err(err)?
-        .ok_or_else(|| "connection profile not found".to_string())?;
+    let result = match profile.dialect.as_str() {
+        "postgres" => execute_postgres(&profile, &validated.sql).await,
+        "mysql" => execute_mysql(&profile, &validated.sql).await,
+        other => Err(format!(
+            "dialect '{other}' is not supported for execution. \
+             Postgres and MySQL are wired; SQLite and SQL Server are deferred (ADR 0012)."
+        )),
+    };
 
+    if let Some(hid) = history_id.as_deref() {
+        if let Ok(r) = &result {
+            let _ = store.update_history_execution(
+                hid,
+                r.row_count as i64,
+                r.duration_ms as i64,
+            );
+        }
+    }
+
+    result
+}
+
+async fn execute_postgres(
+    profile: &ConnectionProfile,
+    sql: &str,
+) -> Result<ExecutionResult, String> {
     let opts = PgConnectOptions::new()
         .host(&profile.host)
         .port(profile.port)
@@ -578,7 +634,7 @@ pub async fn execute_query(
         .map_err(err)?;
 
     let start = Instant::now();
-    let mut stream = sqlx::query(&validated.sql).fetch(&mut conn);
+    let mut stream = sqlx::query(sql).fetch(&mut conn);
     let mut rows: Vec<Vec<Value>> = Vec::new();
     let mut columns: Vec<String> = Vec::new();
     let mut truncated = false;
@@ -594,15 +650,13 @@ pub async fn execute_query(
         }
         let mut json_row = Vec::with_capacity(row.columns().len());
         for i in 0..row.columns().len() {
-            json_row.push(decode_value(&row, i));
+            json_row.push(decode_pg_value(&row, i));
         }
         rows.push(json_row);
     }
     drop(stream);
     let duration = start.elapsed();
     let _ = conn.close().await;
-
-    let _ = validated; // silence unused-result warning
 
     Ok(ExecutionResult {
         row_count: rows.len(),
@@ -613,15 +667,80 @@ pub async fn execute_query(
     })
 }
 
-/// Best-effort generic decoder. Tries common Postgres types in order. For
-/// types we don't decode (e.g. timestamps without the sqlx `time` feature),
-/// falls back to a placeholder string. Phase 3 walking skeleton — Phase 5
-/// or later should harden this.
-fn decode_value(row: &PgRow, i: usize) -> Value {
+async fn execute_mysql(
+    profile: &ConnectionProfile,
+    sql: &str,
+) -> Result<ExecutionResult, String> {
+    let opts = MySqlConnectOptions::new()
+        .host(&profile.host)
+        .port(profile.port)
+        .database(&profile.database_name)
+        .username(&profile.username)
+        .password(&profile.password);
+
+    let mut conn = opts.connect().await.map_err(err)?;
+
+    // Defense in depth on top of the read-only DB role. MySQL's
+    // `SET SESSION TRANSACTION READ ONLY` applies to subsequent transactions.
+    sqlx::query("SET SESSION TRANSACTION READ ONLY")
+        .execute(&mut conn)
+        .await
+        .map_err(err)?;
+    // `MAX_EXECUTION_TIME` is a SELECT-only timeout in milliseconds, MySQL
+    // 5.7.4+. It does not exist on MariaDB or older MySQL — best-effort, ignore
+    // failures so the read-only role remains the primary control.
+    let _ = sqlx::query(&format!(
+        "SET SESSION MAX_EXECUTION_TIME = {QUERY_TIMEOUT_MS}"
+    ))
+    .execute(&mut conn)
+    .await;
+
+    let start = Instant::now();
+    let mut stream = sqlx::query(sql).fetch(&mut conn);
+    let mut rows: Vec<Vec<Value>> = Vec::new();
+    let mut columns: Vec<String> = Vec::new();
+    let mut truncated = false;
+
+    while let Some(row_result) = stream.next().await {
+        if rows.len() >= ROW_CAP {
+            truncated = true;
+            break;
+        }
+        let row: MySqlRow = row_result.map_err(err)?;
+        if columns.is_empty() {
+            columns = row.columns().iter().map(|c| c.name().to_string()).collect();
+        }
+        let mut json_row = Vec::with_capacity(row.columns().len());
+        for i in 0..row.columns().len() {
+            json_row.push(decode_mysql_value(&row, i));
+        }
+        rows.push(json_row);
+    }
+    drop(stream);
+    let duration = start.elapsed();
+    let _ = conn.close().await;
+
+    Ok(ExecutionResult {
+        row_count: rows.len(),
+        columns,
+        rows,
+        truncated,
+        duration_ms: duration.as_millis() as u64,
+    })
+}
+
+/// Try common Postgres types in order. With the `time`, `uuid`, and `json`
+/// sqlx features enabled, this covers TIMESTAMPTZ / TIMESTAMP / DATE / TIME /
+/// UUID / JSON / JSONB in addition to the integer and string scalars.
+fn decode_pg_value(row: &PgRow, i: usize) -> Value {
+    // Integer / boolean / float scalars first.
     if let Ok(v) = row.try_get::<Option<i64>, _>(i) {
         return v.map(Value::from).unwrap_or(Value::Null);
     }
     if let Ok(v) = row.try_get::<Option<i32>, _>(i) {
+        return v.map(|x| Value::from(x as i64)).unwrap_or(Value::Null);
+    }
+    if let Ok(v) = row.try_get::<Option<i16>, _>(i) {
         return v.map(|x| Value::from(x as i64)).unwrap_or(Value::Null);
     }
     if let Ok(v) = row.try_get::<Option<bool>, _>(i) {
@@ -637,6 +756,32 @@ fn decode_value(row: &PgRow, i: usize) -> Value {
             .and_then(|x| serde_json::Number::from_f64(x as f64).map(Value::from))
             .unwrap_or(Value::Null);
     }
+    // Date / time types render as ISO 8601 strings so the UI can sort them.
+    if let Ok(v) = row.try_get::<Option<time::OffsetDateTime>, _>(i) {
+        return v
+            .map(|t| Value::String(format_offset_dt(&t)))
+            .unwrap_or(Value::Null);
+    }
+    if let Ok(v) = row.try_get::<Option<time::PrimitiveDateTime>, _>(i) {
+        return v
+            .map(|t| Value::String(format_primitive_dt(&t)))
+            .unwrap_or(Value::Null);
+    }
+    if let Ok(v) = row.try_get::<Option<time::Date>, _>(i) {
+        return v.map(|d| Value::String(d.to_string())).unwrap_or(Value::Null);
+    }
+    if let Ok(v) = row.try_get::<Option<time::Time>, _>(i) {
+        return v.map(|t| Value::String(t.to_string())).unwrap_or(Value::Null);
+    }
+    // UUID renders as its hyphenated form.
+    if let Ok(v) = row.try_get::<Option<uuid::Uuid>, _>(i) {
+        return v.map(|u| Value::String(u.to_string())).unwrap_or(Value::Null);
+    }
+    // Strings last — text-shaped types are common, so we don't want them
+    // catching numeric columns. JSON / JSONB get serialized to text by
+    // Postgres at this point because the sqlx `json` feature isn't enabled
+    // (it would pull sqlx-sqlite, which collides with rusqlite's bundled
+    // SQLCipher — see Cargo.toml comment).
     if let Ok(v) = row.try_get::<Option<String>, _>(i) {
         return v.map(Value::from).unwrap_or(Value::Null);
     }
@@ -646,6 +791,101 @@ fn decode_value(row: &PgRow, i: usize) -> Value {
         .map(|c| c.type_info().to_string())
         .unwrap_or_else(|| "?".into());
     Value::String(format!("<unsupported type: {type_name}>"))
+}
+
+/// MySQL counterpart of `decode_pg_value`. MySQL has no native UUID type;
+/// CHAR(36) UUIDs are caught by the String fallback at the end.
+fn decode_mysql_value(row: &MySqlRow, i: usize) -> Value {
+    if let Ok(v) = row.try_get::<Option<i64>, _>(i) {
+        return v.map(Value::from).unwrap_or(Value::Null);
+    }
+    if let Ok(v) = row.try_get::<Option<i32>, _>(i) {
+        return v.map(|x| Value::from(x as i64)).unwrap_or(Value::Null);
+    }
+    if let Ok(v) = row.try_get::<Option<i16>, _>(i) {
+        return v.map(|x| Value::from(x as i64)).unwrap_or(Value::Null);
+    }
+    if let Ok(v) = row.try_get::<Option<u64>, _>(i) {
+        return v.map(Value::from).unwrap_or(Value::Null);
+    }
+    if let Ok(v) = row.try_get::<Option<u32>, _>(i) {
+        return v.map(|x| Value::from(x as u64)).unwrap_or(Value::Null);
+    }
+    if let Ok(v) = row.try_get::<Option<bool>, _>(i) {
+        return v.map(Value::from).unwrap_or(Value::Null);
+    }
+    if let Ok(v) = row.try_get::<Option<f64>, _>(i) {
+        return v
+            .and_then(|x| serde_json::Number::from_f64(x).map(Value::from))
+            .unwrap_or(Value::Null);
+    }
+    if let Ok(v) = row.try_get::<Option<f32>, _>(i) {
+        return v
+            .and_then(|x| serde_json::Number::from_f64(x as f64).map(Value::from))
+            .unwrap_or(Value::Null);
+    }
+    if let Ok(v) = row.try_get::<Option<time::OffsetDateTime>, _>(i) {
+        return v
+            .map(|t| Value::String(format_offset_dt(&t)))
+            .unwrap_or(Value::Null);
+    }
+    if let Ok(v) = row.try_get::<Option<time::PrimitiveDateTime>, _>(i) {
+        return v
+            .map(|t| Value::String(format_primitive_dt(&t)))
+            .unwrap_or(Value::Null);
+    }
+    if let Ok(v) = row.try_get::<Option<time::Date>, _>(i) {
+        return v.map(|d| Value::String(d.to_string())).unwrap_or(Value::Null);
+    }
+    if let Ok(v) = row.try_get::<Option<time::Time>, _>(i) {
+        return v.map(|t| Value::String(t.to_string())).unwrap_or(Value::Null);
+    }
+    if let Ok(v) = row.try_get::<Option<String>, _>(i) {
+        return v.map(Value::from).unwrap_or(Value::Null);
+    }
+    if let Ok(v) = row.try_get::<Option<Vec<u8>>, _>(i) {
+        return v
+            .map(|bytes| Value::String(format!("<binary {} bytes>", bytes.len())))
+            .unwrap_or(Value::Null);
+    }
+    let type_name = row
+        .columns()
+        .get(i)
+        .map(|c| c.type_info().to_string())
+        .unwrap_or_else(|| "?".into());
+    Value::String(format!("<unsupported type: {type_name}>"))
+}
+
+fn format_offset_dt(t: &time::OffsetDateTime) -> String {
+    t.format(&time::format_description::well_known::Rfc3339)
+        .unwrap_or_else(|_| t.to_string())
+}
+
+fn format_primitive_dt(t: &time::PrimitiveDateTime) -> String {
+    let date = t.date();
+    let time_part = t.time();
+    format!("{date}T{time_part}")
+}
+
+// ---------- History ----------
+
+#[tauri::command]
+pub async fn list_history(
+    connection_id: String,
+    limit: Option<i64>,
+    store: State<'_, Store>,
+) -> Result<Vec<HistoryEntry>, String> {
+    store
+        .list_history(&connection_id, limit.unwrap_or(50))
+        .map_err(err)
+}
+
+#[tauri::command]
+pub async fn clear_history(
+    connection_id: String,
+    store: State<'_, Store>,
+) -> Result<(), String> {
+    store.clear_history(&connection_id).map_err(err)
 }
 
 fn format_schema_for_prompt(model: &SchemaModel) -> String {

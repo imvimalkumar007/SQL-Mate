@@ -107,3 +107,21 @@ export type EmbeddingStats = {
   retrieval_threshold: number;
   retrieval_top_n: number;
 };
+
+export type GenerationResult = {
+  sql: string;
+  history_id: string;
+};
+
+export type HistoryEntry = {
+  id: string;
+  connection_id: string;
+  asked_at: number;
+  question: string;
+  generated_sql: string | null;
+  validation_status: string;
+  validation_error: string | null;
+  was_executed: boolean;
+  execution_row_count: number | null;
+  execution_duration_ms: number | null;
+};

@@ -5,6 +5,7 @@ import type {
   ConnectionProfile,
   EmbeddingStats,
   ExecutionResult,
+  GenerationResult,
   ModelRegistry,
   ProviderConfig,
   ProviderKind,
@@ -104,6 +105,7 @@ function App() {
   const [generating, setGenerating] = useState(false);
   const [generatedSql, setGeneratedSql] = useState<string | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
+  const [historyId, setHistoryId] = useState<string | null>(null);
 
   // Validation
   const [validation, setValidation] = useState<Validation>({ state: "idle" });
@@ -318,16 +320,18 @@ function App() {
     setGenerating(true);
     setGeneratedSql(null);
     setGenerateError(null);
+    setHistoryId(null);
     setValidation({ state: "idle" });
     setResults(null);
     setExecuteError(null);
     try {
-      const sql = await invoke<string>("generate_sql", {
+      const result = await invoke<GenerationResult>("generate_sql", {
         connectionId: selectedId,
         question,
       });
-      setGeneratedSql(sql);
-      void validate(sql);
+      setGeneratedSql(result.sql);
+      setHistoryId(result.history_id);
+      void validate(result.sql, result.history_id);
     } catch (e) {
       setGenerateError(String(e));
     } finally {
@@ -335,13 +339,14 @@ function App() {
     }
   }
 
-  async function validate(sql: string) {
+  async function validate(sql: string, hid: string | null = historyId) {
     if (!selectedId) return;
     setValidation({ state: "running" });
     try {
       const v = await invoke<ValidatedSql>("validate_sql", {
         connectionId: selectedId,
         sql,
+        historyId: hid,
       });
       setValidation({ state: "ok", referenced: v.referenced_tables });
     } catch (e) {
@@ -358,6 +363,7 @@ function App() {
       const r = await invoke<ExecutionResult>("execute_query", {
         connectionId: selectedId,
         sql: generatedSql,
+        historyId,
       });
       setResults(r);
     } catch (e) {
