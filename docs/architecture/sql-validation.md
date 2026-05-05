@@ -2,6 +2,8 @@
 
 Parses generated SQL and enforces two constraints: it must be read-only, and it must reference only entities that exist in the user's schema. This is a load-bearing security control. Any change here requires a security review.
 
+Phase 9 note: even though the app no longer executes SQL (see `query-execution.md`), the validator still runs on every generation. Its verdict gates whether the SQL is shown to the user, and protects users in the case where they would otherwise copy-paste a destructive query into a SQL tool that doesn't gate on read-only.
+
 ## Implementation
 
 Two layers, both must pass:
@@ -38,7 +40,7 @@ System tables (`information_schema.*`, `pg_catalog.*`, `sys.*`, `sqlite_master`)
 
 ## Output
 
-On success, a `ValidatedSql` struct containing the original SQL plus the list of referenced tables (used for the execution module's row-cap heuristic).
+On success, a `ValidatedSql` struct containing the original SQL plus the list of referenced tables. The referenced-tables list is shown in the validation status banner so the user can confirm the model touched the entities they expected.
 
 On failure, a structured error with a category and human-readable message. The UI displays the message and offers to send the error back to the LLM as a follow-up: "The previous query referenced a table that does not exist. Try again."
 

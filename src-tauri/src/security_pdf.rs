@@ -258,13 +258,12 @@ const SECURITY_GUARANTEES: &str = "\
 
 3. Generated SQL is read-only by construction. Every query is parsed and \
    validated for read-only operations before you see it. The validator \
-   rejects any query that mutates state. Enforced at the application \
-   layer; you should additionally use database credentials that are \
-   read-only at the database layer.
+   rejects any query that mutates state.
 
-4. You see every query before it runs. The query is displayed in the UI \
-   with an explanation of what it does, and you click run. There is no \
-   auto-execute path.
+4. The app does not execute generated SQL. As of Phase 9 the run-query \
+   path was removed entirely. The app produces validated SQL and you \
+   copy it into your own tool to run. There is no execution code path \
+   inside the application.
 
 5. Your API keys and database passwords are stored encrypted at rest. \
    Secrets live in a SQLCipher-encrypted local SQLite file (AES-256-CBC, \
@@ -427,13 +426,17 @@ fn write_network_endpoints(pb: &mut PageBuilder, inputs: &PdfInputs<'_>) {
     pb.body_line("  Does not send: row data, API keys to anyone but the provider.");
     pb.skip(2.0);
 
-    pb.bold_line("Database (per query, when you click Run)");
+    pb.bold_line("Database (only for schema extraction; not used to run generated SQL)");
     match inputs.profile {
         Some(p) => pb.body_line(&format!("- {}:{} (database '{}')", p.host, p.port, p.database_name)),
         None => pb.body_line("- (none — no connection configured)"),
     }
-    pb.body_line("  Sends: the validated SELECT query produced by the LLM.");
-    pb.body_line("  Receives: rows, displayed locally, never re-transmitted.");
+    pb.body_line("  Sends: a single metadata query against information_schema (Postgres)");
+    pb.body_line("    or information_schema.COLUMNS / KEY_COLUMN_USAGE (MySQL).");
+    pb.body_line("    The verbatim queries are at the end of this document.");
+    pb.body_line("  Does NOT send: any query against user data tables.");
+    pb.body_line("  The app does not execute generated SQL — users copy the SQL");
+    pb.body_line("    and run it in a tool of their choice.");
     pb.skip(2.0);
 
     pb.bold_line("Model registry");

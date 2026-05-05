@@ -61,21 +61,6 @@ impl Store {
         Ok(())
     }
 
-    pub fn update_history_execution(
-        &self,
-        history_id: &str,
-        row_count: i64,
-        duration_ms: i64,
-    ) -> Result<(), StoreError> {
-        let conn = self.lock();
-        conn.execute(
-            "UPDATE history SET was_executed = 1, execution_row_count = ?1,
-                execution_duration_ms = ?2 WHERE id = ?3",
-            params![row_count, duration_ms, history_id],
-        )?;
-        Ok(())
-    }
-
     pub fn list_history(
         &self,
         connection_id: &str,

@@ -7,10 +7,9 @@ This document describes the high-level system design. Each module has its own de
 SQL Mate is a single-binary desktop application. There is no server. There is no cloud component. The only network calls the application makes are:
 
 1. Direct HTTPS to the LLM provider the user configured, using the user's own API key.
-2. Direct database connections from the user's machine to their own database, over the network the user already trusts for that purpose.
-3. A startup check against a static model registry JSON file (cacheable, fail-open if offline).
+2. A direct database connection from the user's machine to their own database, **only for schema extraction** (a single metadata query against `information_schema`). The app does not execute generated SQL — see Phase 9 below.
 
-Nothing else.
+Nothing else. The model registry is bundled with the app, not fetched.
 
 ```
 ┌─────────────────────────── User's machine ───────────────────────────┐
@@ -19,14 +18,15 @@ Nothing else.
 │  │  SQL Mate desktop app (Tauri)                                │    │
 │  │                                                              │    │
 │  │  ┌────────────────┐    ┌─────────────────┐    ┌──────────┐  │    │
-│  │  │ React frontend │ ←→ │ Rust core       │ ←→ │ SQLite   │  │    │
-│  │  └────────────────┘    │  - extractor    │    │  cache   │  │    │
-│  │                        │  - validator*   │    └──────────┘  │    │
-│  │                        │  - executor     │                  │    │
-│  │                        │  - llm client   │    ┌──────────┐  │    │
-│  │                        └─────────────────┘ ←→ │ OS       │  │    │
-│  │                                  ↕             │ keychain │  │    │
-│  │                        ┌─────────────────┐    └──────────┘  │    │
+│  │  │ React frontend │ ←→ │ Rust core       │ ←→ │ SQLCipher│  │    │
+│  │  │ (3-section UI: │    │  - extractor    │    │  store   │  │    │
+│  │  │  schema, ask,  │    │  - validator*   │    └──────────┘  │    │
+│  │  │  generated SQL)│    │  - llm client   │                  │    │
+│  │  │  click-to-copy │    │  - redact +     │                  │    │
+│  │  └────────────────┘    │    request log  │                  │    │
+│  │                        └─────────────────┘                  │    │
+│  │                                  ↕                          │    │
+│  │                        ┌─────────────────┐                  │    │
 │  │                        │ Python sidecar  │                  │    │
 │  │                        │  (sqlglot AST)  │                  │    │
 │  │                        └─────────────────┘                  │    │
@@ -34,7 +34,8 @@ Nothing else.
 │                                ↕                                      │
 │                   ┌────────────────────────┐                          │
 │                   │ User's database        │                          │
-│                   │ (read-only role)       │                          │
+│                   │ — schema extraction    │                          │
+│                   │   only (metadata)      │                          │
 │                   └────────────────────────┘                          │
 └──────────────────────────────────────────────────────────────────────┘
                                  ↕
@@ -45,18 +46,18 @@ Nothing else.
                    └────────────────────────┘
 ```
 
-\* The Rust core does first-pass dialect-aware syntactic checks; the Python sidecar runs `sqlglot` for AST-level read-only enforcement. See `docs/decisions/0004-sqlglot-for-validation.md`.
+\* The Rust core does first-pass dialect-aware syntactic checks; the Python sidecar runs `sqlglot` for AST-level read-only enforcement. See `docs/decisions/0004-sqlglot-for-validation.md`. The validator's verdict gates whether the SQL is shown to the user; the app does not run it.
 
 ## Modules
 
-The system has six modules, each documented separately:
+The system has five live modules plus one removed-but-documented:
 
 - **Schema extraction** (`docs/architecture/schema-extraction.md`) — connects to the user's database with read-only credentials, runs metadata-only queries against `information_schema` or equivalent, normalizes the result into the canonical schema model.
-- **Schema store** (`docs/architecture/schema-store.md`) — local SQLite database holding the canonical schema model, user annotations, redaction rules, and query history. Encrypted at rest using a key derived from the OS keychain.
-- **LLM provider** (`docs/architecture/llm-provider.md`) — abstraction over Anthropic, OpenAI, and OpenAI-compatible endpoints. Handles prompt caching where supported, structured outputs where supported, graceful fallback otherwise.
-- **SQL generation** (`docs/architecture/sql-generation.md`) — assembles the prompt from the relevant schema slice plus the user's question, calls the provider, parses the response.
-- **SQL validation** (`docs/architecture/sql-validation.md`) — parses the generated SQL with `sqlglot`, enforces read-only, checks that all referenced tables and columns exist in the schema, returns the validated query or a structured error.
-- **Query execution** (`docs/architecture/query-execution.md`) — runs the validated SQL against the user's database in a read-only transaction with a row-count cap and a timeout, returns results to the frontend without ever sending them off-device.
+- **Schema store** (`docs/architecture/schema-store.md`) — local SQLCipher-encrypted SQLite database holding the canonical schema model, user annotations, redaction rules, provider configs, embeddings, and query history. Key in a sibling file under the app data dir; OS keychain integration deferred to ADR 0008.
+- **LLM provider** (`docs/architecture/llm-provider.md`) — closed-enum dispatch over Anthropic, OpenAI, and OpenAI-compatible endpoints. Handles prompt caching where supported, structured outputs where supported, graceful fallback otherwise.
+- **SQL generation** (`docs/architecture/sql-generation.md`) — overlays persisted annotations + redactions onto the canonical schema model, narrows to the relevant slice (top-N by embedding similarity for large schemas, all tables otherwise), obfuscates sensitive column names, assembles the prompt, calls the provider, de-obfuscates the response.
+- **SQL validation** (`docs/architecture/sql-validation.md`) — Layer 1 in Rust, Layer 2 via `sqlglot` in the Python sidecar. Returns the validated query or a structured error. The verdict gates whether the SQL is shown to the user.
+- **~~Query execution~~** (`docs/architecture/query-execution.md`) — **removed in Phase 9**. The doc is kept as an archaeology marker. The app generates and validates SQL but does not execute it; users copy the validated SQL and run it in their own tool.
 
 UI flows that span these modules are documented in `docs/architecture/ui-flows.md`.
 
@@ -107,18 +108,21 @@ Both the live extractor and any future file-based ingestion produce this shape. 
 
 ## Data flow for a single question
 
-1. User types a question.
-2. Frontend sends question to Rust core.
-3. Core retrieves the relevant schema slice from the schema store. For schemas with under ~50 tables this is "all of it." For larger schemas, an embedding-based retriever picks the top N tables by similarity, then expands to include their foreign-key neighbors.
-4. Core composes a prompt: system message + schema slice (respecting redaction rules) + question.
-5. Core reads the API key from the OS keychain.
-6. Core sends the request to the configured provider.
-7. Response is parsed for the SQL query and explanation.
-8. SQL is sent to the Python sidecar for validation.
-9. If validation fails, the user sees a structured error explaining what failed.
-10. If validation passes, the SQL is shown in the UI for review, with the explanation.
-11. User clicks "run." Core executes the SQL in a read-only transaction with timeout and row cap.
-12. Results are returned to the frontend and displayed. They are stored in the local query history, not sent anywhere.
+1. User types a question into the "Ask a question" section.
+2. Frontend invokes `generate_sql` on the Rust core.
+3. Core loads the persisted schema model and overlays the user's annotations + redactions on top of it.
+4. Core retrieves the relevant schema slice. For schemas with under ~50 tables this is "all of it." For larger schemas, an embedding-based retriever picks the top N tables by similarity, then expands to include their foreign-key neighbors.
+5. Core obfuscates sensitive column names with stable placeholders (`r_c_1`, `r_c_2`, …) — the LLM never sees the real names.
+6. Core composes the prompt: system message + (post-redaction, post-obfuscation) schema slice + question.
+7. Core reads the API key from the SQLCipher store (keychain pending ADR 0008).
+8. Core captures the exact bytes about to go out into the in-memory request log (last-request-per-connection, accessible from the UI for audit).
+9. Core sends the request to the configured provider.
+10. Response is parsed for the SQL query.
+11. Core de-obfuscates the response (substitutes original column names back).
+12. Core writes a row to the `history` table (question, generated SQL, validation status pending).
+13. SQL is returned to the frontend with the originating model id. UI renders it with syntax highlighting + a copy button.
+14. UI invokes `validate_sql` against the Python sidecar; the row in `history` is updated with valid / invalid.
+15. If validation passes, the user copies the SQL and runs it in their own tool. If it fails, the user sees a structured error.
 
 ## Threading model
 
@@ -128,14 +132,15 @@ Both the live extractor and any future file-based ingestion produce this shape. 
 
 ## Persistence
 
-- Schema cache, annotations, query history: SQLite at `<app data dir>/sql-mate/store.db`. Encrypted using SQLCipher with a key derived from a value stored in the OS keychain.
-- Connection profiles: same SQLite file. Connection strings are not stored — only the host/port/database/username and a reference to the keychain entry that holds the password.
-- API keys: OS keychain only. Never written to disk by us.
-- Logs: `<app data dir>/sql-mate/logs/`. Structure-only (counts, timings, error types). Never schema content. Never query content. Rotated daily, capped at 30 days.
+- Schema cache, annotations, redactions, embeddings, history, provider configs, connection profiles, settings: a single SQLCipher-encrypted SQLite file at `<app data dir>/sql-mate/store.db`. The 32-byte key sits in `<app data dir>/sql-mate/.db-key`; OS keychain integration is deferred per ADR 0008.
+- Connection profiles include the password (encrypted in the store). The original architecture called for keychain-only password storage; that's the deferred part.
+- API keys: same SQLCipher store; never written to plaintext disk by us, never logged, never included in telemetry.
+- Logs: structure-only (counts, timings, error types). Never schema content. Never query content. (Phase 9 polish does not yet add a log retention policy — currently the app prints to stderr and Tauri's window console, not a file.)
 
 ## What we do not have and will not add without an ADR
 
-- Any outbound network call beyond the three listed at the top.
+- Any outbound network call beyond the two listed at the top.
 - Any local server listening on a port.
-- Any background sync, auto-update of schema, or telemetry beep.
+- Any execution code path that runs generated SQL against the user's database (Phase 9 removed it; reintroduction would be a new ADR).
+- Any background sync, auto-update of schema, or telemetry payload.
 - Any code that reads row data into the LLM call path.

@@ -14,7 +14,7 @@ Terms used throughout the project that have a specific meaning here. When in dou
 
 **Provider.** An LLM service (Anthropic, OpenAI, Google, etc.) or any service exposing an OpenAI-compatible API. Configured by the user with their own API key.
 
-**Read-only transaction.** A database transaction explicitly marked read-only at the database protocol level. For Postgres: `SET TRANSACTION READ ONLY`. For MySQL: `START TRANSACTION READ ONLY`. For SQL Server: `SET TRANSACTION ISOLATION LEVEL SNAPSHOT` plus permission-level enforcement. Used for both `EXPLAIN` checks and actual query execution.
+**Read-only transaction.** Historically: a database transaction explicitly marked read-only at the database protocol level (Postgres `SET default_transaction_read_only`, MySQL `SET SESSION TRANSACTION READ ONLY`, etc.). Phase 9 removed in-app SQL execution, so the only DB connection the app opens now is the schema-extraction connection in `extract::*`, which uses the same read-only setting belt-and-suspenders even though the metadata query is inherently read.
 
 **Redaction.** The process of replacing sensitive table or column names with obfuscated identifiers before sending to the LLM, and reversing that mapping when the response comes back. Per-entity, opt-in.
 
@@ -24,4 +24,9 @@ Terms used throughout the project that have a specific meaning here. When in dou
 
 **Sidecar.** The Python child process that hosts `sqlglot` for SQL validation. Long-lived, communicates with the Rust core over stdin/stdout JSON.
 
-**Validator.** The module that parses generated SQL and enforces read-only and schema-grounded constraints. Implemented partly in Rust (fast first-pass) and partly in the Python sidecar (`sqlglot` AST analysis).
+**Validator.** The module that parses generated SQL and enforces read-only and schema-grounded constraints. Implemented partly in Rust (fast first-pass) and partly in the Python sidecar (`sqlglot` AST analysis). The validator's verdict gates whether the SQL is shown to the user.
+
+**Request log.** An in-memory record of the most recent generation request per connection — the post-obfuscation user message exactly as sent to the LLM. Used by the UI to let the user audit what bytes went to the provider. Cleared on app restart; never persisted.
+
+**Session history.** An in-memory list of past question + generated-SQL pairs from the current app session. Rendered below the current generated SQL. Cleared on restart. (The persisted `history` table is a separate thing, surfaced via `list_history` for any future cross-session UI.)
+
