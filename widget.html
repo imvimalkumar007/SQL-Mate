@@ -4,6 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SQL Mate widget</title>
+    <!-- No external fonts: SECURITY_MODEL.md restricts outbound calls to
+         the configured LLM provider and the user's database. We use
+         system font fallbacks (Inter / SF Mono / JetBrains Mono if locally
+         installed; otherwise the browser's default sans/mono). Icons are
+         inline SVGs in src/widget-icons.tsx. -->
   </head>
   <body>
     <div id="root"></div>
