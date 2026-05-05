@@ -325,6 +325,19 @@ pub async fn create_provider_config(
 }
 
 #[tauri::command]
+pub async fn update_provider_model(
+    id: String,
+    model: String,
+    store: State<'_, Store>,
+) -> Result<ProviderConfig, String> {
+    store.update_provider_model(&id, &model).map_err(err)?;
+    store
+        .get_provider_config(&id)
+        .map_err(err)?
+        .ok_or_else(|| format!("provider config {id} not found after update"))
+}
+
+#[tauri::command]
 pub async fn delete_provider_config(
     id: String,
     store: State<'_, Store>,
@@ -377,6 +390,7 @@ pub async fn get_model_registry() -> Result<Value, String> {
 pub struct GenerationResult {
     pub sql: String,
     pub history_id: String,
+    pub model: String,
 }
 
 #[tauri::command]
@@ -456,7 +470,11 @@ pub async fn generate_sql(
     let history_id = store
         .record_history(&connection_id, &question, Some(&resp.sql))
         .map_err(err)?;
-    Ok(GenerationResult { sql: resp.sql, history_id })
+    Ok(GenerationResult {
+        sql: resp.sql,
+        history_id,
+        model: pc.model.clone(),
+    })
 }
 
 fn build_provider(c: &ProviderConfig) -> Provider {
