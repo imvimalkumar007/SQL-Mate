@@ -11,11 +11,14 @@ use tauri::State;
 
 use crate::extract::{self, ConnectionParams};
 use crate::llm::{embeddings as llm_embeddings, AnthropicProvider, OpenAIProvider, Provider, SqlGenerationRequest};
+use crate::redact::{apply_overlay, Obfuscator};
+use crate::request_log::{RequestLog, RequestLogEntry};
 use crate::retrieve;
 use crate::schema::SchemaModel;
 use crate::sidecar::{SidecarManager, ValidatedSql};
 use crate::store::{
-    ConnectionProfile, HistoryEntry, NewConnectionProfile, NewProviderConfig, ProviderConfig, Store, StoreError,
+    Annotation, ConnectionProfile, HistoryEntry, NewConnectionProfile, NewProviderConfig,
+    ProviderConfig, Redaction, Store, StoreError,
 };
 
 const ROW_CAP: usize = 1_000;
@@ -152,7 +155,12 @@ pub async fn get_persisted_schema(
 ) -> Result<Option<SchemaModel>, String> {
     match store.get_schema(&connection_id).map_err(err)? {
         Some(p) => {
-            let model: SchemaModel = serde_json::from_str(&p.model_json).map_err(err)?;
+            let mut model: SchemaModel = serde_json::from_str(&p.model_json).map_err(err)?;
+            // Phase 8: overlay the persisted annotations + redactions so the UI
+            // sees the same shape `generate_sql` will use at prompt time.
+            let annotations = store.list_annotations(&connection_id).map_err(err)?;
+            let redactions = store.list_redactions(&connection_id).map_err(err)?;
+            apply_overlay(&mut model, &annotations, &redactions);
             Ok(Some(model))
         }
         None => Ok(None),
@@ -398,6 +406,7 @@ pub async fn generate_sql(
     connection_id: String,
     question: String,
     store: State<'_, Store>,
+    request_log: State<'_, RequestLog>,
 ) -> Result<GenerationResult, String> {
     let active_id = settings_get(&store, SETTING_ACTIVE_PROVIDER)
         .map_err(err)?
@@ -419,10 +428,16 @@ pub async fn generate_sql(
             "No schema extracted yet for this connection. Click \"Extract schema\" first."
                 .to_string()
         })?;
-    let full_model: SchemaModel = serde_json::from_str(&persisted.model_json).map_err(err)?;
+    let mut full_model: SchemaModel = serde_json::from_str(&persisted.model_json).map_err(err)?;
+
+    // Phase 8: overlay persisted annotations + redactions onto the model
+    // before retrieval / prompt assembly.
+    let annotations = store.list_annotations(&connection_id).map_err(err)?;
+    let redactions = store.list_redactions(&connection_id).map_err(err)?;
+    apply_overlay(&mut full_model, &annotations, &redactions);
 
     // Phase 5: above the retrieval threshold, narrow to top-N + FK neighborhood.
-    let model_for_prompt = if retrieve::total_table_count(&full_model) >= retrieve::RETRIEVAL_THRESHOLD {
+    let mut model_for_prompt = if retrieve::total_table_count(&full_model) >= retrieve::RETRIEVAL_THRESHOLD {
         let stored = store.list_embeddings(&connection_id).map_err(err)?;
         if stored.is_empty() {
             return Err(format!(
@@ -457,25 +472,65 @@ pub async fn generate_sql(
         full_model
     };
 
+    // Capture which tables were excluded BEFORE we further mutate the
+    // model. Used by the request log so the user can audit.
+    let excluded_tables: Vec<String> = model_for_prompt
+        .schemas
+        .iter()
+        .flat_map(|s| {
+            s.tables
+                .iter()
+                .filter(|t| t.excluded)
+                .map(move |t| format!("{}.{}", s.name, t.name))
+        })
+        .collect();
+
+    // Phase 8: obfuscate sensitive columns. Mapping is per-request and lives
+    // only on the stack — never persisted, never logged outside this scope.
+    let mut obfuscator = Obfuscator::new();
+    obfuscator.apply(&mut model_for_prompt);
+
     let schema_text = format_schema_for_prompt(&model_for_prompt);
+    let user_message = format!("Schema:\n{schema_text}\n\nQuestion: {question}");
+
+    // Capture the request log entry for audit. This is the obfuscated form,
+    // which is what actually goes over the wire.
+    request_log.record(
+        &connection_id,
+        RequestLogEntry {
+            timestamp: time::OffsetDateTime::now_utc().unix_timestamp(),
+            model: pc.model.clone(),
+            provider_kind: pc.kind.clone(),
+            system_prompt: SYSTEM_PROMPT_PG.to_string(),
+            user_message: user_message.clone(),
+            obfuscated_columns: obfuscator.replacement_count(),
+            excluded_tables,
+        },
+    );
 
     let req = SqlGenerationRequest {
         system_prompt: SYSTEM_PROMPT_PG.to_string(),
-        user_message: format!("Schema:\n{schema_text}\n\nQuestion: {question}"),
+        user_message,
         model: pc.model.clone(),
         max_tokens: 1024,
     };
 
     let resp = provider.generate_sql(req).await.map_err(err)?;
+    let final_sql = if obfuscator.has_replacements() {
+        obfuscator.deobfuscate_sql(&resp.sql)
+    } else {
+        resp.sql
+    };
     let history_id = store
-        .record_history(&connection_id, &question, Some(&resp.sql))
+        .record_history(&connection_id, &question, Some(&final_sql))
         .map_err(err)?;
     Ok(GenerationResult {
-        sql: resp.sql,
+        sql: final_sql,
         history_id,
         model: pc.model.clone(),
     })
 }
+
 
 fn build_provider(c: &ProviderConfig) -> Provider {
     match c.kind.as_str() {
@@ -904,6 +959,128 @@ pub async fn clear_history(
     store: State<'_, Store>,
 ) -> Result<(), String> {
     store.clear_history(&connection_id).map_err(err)
+}
+
+// ---------- Annotations + redactions (Phase 8 / ADR per ROADMAP) ----------
+
+#[derive(Debug, Deserialize)]
+pub struct SetAnnotationRequest {
+    pub connection_id: String,
+    pub schema_name: String,
+    pub table_name: String,
+    pub column_name: Option<String>,
+    pub annotation: String,
+}
+
+#[tauri::command]
+pub async fn set_annotation(
+    req: SetAnnotationRequest,
+    store: State<'_, Store>,
+) -> Result<(), String> {
+    store
+        .set_annotation(
+            &req.connection_id,
+            &req.schema_name,
+            &req.table_name,
+            req.column_name.as_deref(),
+            &req.annotation,
+        )
+        .map_err(err)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ClearAnnotationRequest {
+    pub connection_id: String,
+    pub schema_name: String,
+    pub table_name: String,
+    pub column_name: Option<String>,
+}
+
+#[tauri::command]
+pub async fn clear_annotation(
+    req: ClearAnnotationRequest,
+    store: State<'_, Store>,
+) -> Result<(), String> {
+    store
+        .clear_annotation(
+            &req.connection_id,
+            &req.schema_name,
+            &req.table_name,
+            req.column_name.as_deref(),
+        )
+        .map_err(err)
+}
+
+#[tauri::command]
+pub async fn list_annotations(
+    connection_id: String,
+    store: State<'_, Store>,
+) -> Result<Vec<Annotation>, String> {
+    store.list_annotations(&connection_id).map_err(err)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetRedactionRequest {
+    pub connection_id: String,
+    pub schema_name: String,
+    pub table_name: String,
+    pub column_name: Option<String>,
+    pub kind: String, // "excluded" | "sensitive"
+}
+
+#[tauri::command]
+pub async fn set_redaction(
+    req: SetRedactionRequest,
+    store: State<'_, Store>,
+) -> Result<(), String> {
+    store
+        .set_redaction(
+            &req.connection_id,
+            &req.schema_name,
+            &req.table_name,
+            req.column_name.as_deref(),
+            &req.kind,
+        )
+        .map_err(err)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ClearRedactionRequest {
+    pub connection_id: String,
+    pub schema_name: String,
+    pub table_name: String,
+    pub column_name: Option<String>,
+}
+
+#[tauri::command]
+pub async fn clear_redaction(
+    req: ClearRedactionRequest,
+    store: State<'_, Store>,
+) -> Result<(), String> {
+    store
+        .clear_redaction(
+            &req.connection_id,
+            &req.schema_name,
+            &req.table_name,
+            req.column_name.as_deref(),
+        )
+        .map_err(err)
+}
+
+#[tauri::command]
+pub async fn list_redactions(
+    connection_id: String,
+    store: State<'_, Store>,
+) -> Result<Vec<Redaction>, String> {
+    store.list_redactions(&connection_id).map_err(err)
+}
+
+#[tauri::command]
+pub async fn get_last_request_log(
+    connection_id: String,
+    request_log: State<'_, RequestLog>,
+) -> Result<Option<RequestLogEntry>, String> {
+    Ok(request_log.last(&connection_id))
 }
 
 fn format_schema_for_prompt(model: &SchemaModel) -> String {

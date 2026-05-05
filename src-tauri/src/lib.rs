@@ -1,11 +1,14 @@
 mod commands;
 mod extract;
 mod llm;
+mod redact;
+mod request_log;
 mod retrieve;
 mod schema;
 mod sidecar;
 mod store;
 
+use request_log::RequestLog;
 use sidecar::SidecarManager;
 use store::Store;
 use tauri::Manager;
@@ -18,6 +21,7 @@ pub fn run() {
             let db_path = data_dir.join("sql-mate").join("store.db");
             let store = Store::open(&db_path)?;
             app.manage(store);
+            app.manage(RequestLog::new());
 
             // Spawn the Python sidecar. If startup fails (Python missing,
             // sqlglot not installed, handshake timeout), we surface the
@@ -59,6 +63,13 @@ pub fn run() {
             commands::execute_query,
             commands::list_history,
             commands::clear_history,
+            commands::set_annotation,
+            commands::clear_annotation,
+            commands::list_annotations,
+            commands::set_redaction,
+            commands::clear_redaction,
+            commands::list_redactions,
+            commands::get_last_request_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

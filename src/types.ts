@@ -129,3 +129,29 @@ export type HistoryEntry = {
   execution_row_count: number | null;
   execution_duration_ms: number | null;
 };
+
+export type Annotation = {
+  connection_id: string;
+  schema_name: string;
+  table_name: string;
+  column_name: string | null;
+  annotation: string;
+};
+
+export type Redaction = {
+  connection_id: string;
+  schema_name: string;
+  table_name: string;
+  column_name: string | null;
+  kind: "excluded" | "sensitive";
+};
+
+export type RequestLogEntry = {
+  timestamp: number;
+  model: string;
+  provider_kind: string;
+  system_prompt: string;
+  user_message: string;
+  obfuscated_columns: number;
+  excluded_tables: string[];
+};

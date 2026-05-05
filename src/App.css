@@ -250,6 +250,83 @@ button.link-danger:hover { color: #b91c1c; background: transparent; }
 }
 .results-table tbody tr:hover { background: #fafafa; }
 
+/* Redaction + annotations — Phase 8 */
+.redaction-summary {
+  font-size: 0.8rem;
+  color: #525252;
+  margin: 0.3rem 0 0.5rem;
+}
+.row-actions {
+  display: inline-flex;
+  gap: 0.4rem;
+  margin-left: 0.5rem;
+  vertical-align: middle;
+}
+.toggle-chip {
+  font-size: 0.7rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  background: #f5f5f5;
+  color: #525252;
+}
+.toggle-chip.on { background: #fef9c3; color: #854d0e; border-color: #fde68a; }
+.toggle-chip.danger.on { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
+.toggle-chip:hover { filter: brightness(0.96); }
+.annotation-text {
+  display: block;
+  margin: 0.2rem 0 0.3rem 1.5rem;
+  font-size: 0.78rem;
+  color: #525252;
+  font-family: inherit;
+  font-style: italic;
+}
+.annotation-editor {
+  display: flex;
+  gap: 0.4rem;
+  align-items: flex-start;
+  margin: 0.3rem 0 0.5rem 1.5rem;
+}
+.annotation-editor textarea {
+  flex: 1;
+  font-size: 0.85rem;
+  font-family: inherit;
+  min-height: 2rem;
+}
+.table-block.excluded > summary .table-name {
+  text-decoration: line-through;
+  color: #a3a3a3;
+}
+.column-list li.sensitive code { background: #fee2e2; color: #991b1b; }
+.request-log details {
+  border: 1px dashed #d4d4d4;
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  margin-top: 0.6rem;
+}
+.request-log summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #525252;
+}
+.request-log .log-meta {
+  font-size: 0.78rem;
+  color: #737373;
+  margin: 0.3rem 0;
+}
+.request-log pre {
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 4px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 18rem;
+  overflow: auto;
+}
+
 /* Model picker — Phase 7 / ADR 0013 */
 .model-picker { position: relative; margin-bottom: 0.6rem; }
 .picker-trigger {
