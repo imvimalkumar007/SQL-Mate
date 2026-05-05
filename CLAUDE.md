@@ -60,7 +60,7 @@ Don't ask, just do:
 ## Common pitfalls on this project
 
 - **Forgetting that "schema" includes column names.** Column names can leak business logic (`internal_churn_risk_score`). Some users will redact them before any LLM sees them. The redaction layer must work end-to-end; don't bypass it in dev.
-- **Treating `EXPLAIN` as free.** It runs on the user's database. Always wrap in a read-only transaction with a short timeout.
+- **Reintroducing in-app SQL execution.** Phase 9 removed it. If you find yourself writing code that opens a DB connection outside the schema-extraction module, stop — the security claim "the app does not execute generated SQL" is load-bearing and any change there needs an ADR. See `docs/architecture/query-execution.md`.
 - **Storing the API key in app state.** Read it from the keychain at the moment of the request, never cache it in a long-lived variable.
 - **Accidentally logging schema content.** Logs go to the user's disk but are still a leak vector if the machine is compromised. Log structure, not content. `Extracted 24 tables` is fine; `Extracted tables: customers, orders, ...` is not.
 

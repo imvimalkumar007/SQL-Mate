@@ -1,14 +1,14 @@
 # SQL Mate: local-first natural language to SQL
 
-A desktop application that lets data professionals ask questions of their database in plain English and get back SQL queries without ever exposing row data to an LLM or to our infrastructure.
+A desktop application that lets data professionals ask questions of their database in plain English and get back validated read-only SQL, without ever exposing row data to an LLM or to our infrastructure.
 
 ## The one-paragraph pitch
 
-Most AI SQL tools require either a live database connection to a hosted service or pasting schema and sample rows into a chat interface. Neither is acceptable for security-conscious teams in finance, healthcare, legal, or government. SQL Mate runs entirely on the user's machine. It extracts schema metadata locally (never row data), sends only that metadata plus the user's question to an LLM provider of the user's choice using their own API key, and validates and runs the generated SQL locally against a read-only database connection. We are never in the data path.
+Most AI SQL tools require either a live database connection to a hosted service or pasting schema and sample rows into a chat interface. Neither is acceptable for security-conscious teams in finance, healthcare, legal, or government. SQL Mate runs entirely on the user's machine. It extracts schema metadata locally (never row data), sends only that metadata plus the user's question to an LLM provider of the user's choice using their own API key, validates the generated SQL with `sqlglot` for read-only correctness, and hands the SQL back for the user to copy into their own SQL tool. The app does not execute the SQL — that's a deliberate security choice that turns the audit story from "we run your queries safely" into "we never run your queries at all."
 
 ## Status
 
-Pre-alpha. Architecture and documentation phase. No code yet beyond skeleton.
+Phases 1–9a shipped. The core path (connect → extract → ask → generate → validate → copy) is end-to-end working on Postgres and MySQL. Phase 9b (signed installers, notarization, distribution) is deferred — see `docs/PHASE_9B_DEFERRED.md`. Phase 10 (first five users) is product, not code.
 
 ## Where to start
 
@@ -26,11 +26,16 @@ If you are a contributor or an AI assistant picking this up:
 sql-mate/
 ├── README.md                  This file
 ├── CLAUDE.md                  Instructions for Claude Code sessions
+├── dev.ps1                    Windows dev-shell bootstrap (CARGO_HOME, vcvars64, venv)
+├── .github/workflows/build.yml  Cross-OS unsigned installer builds
 ├── docs/
 │   ├── PROJECT_BRIEF.md       Product goals, target user, non-goals
 │   ├── ARCHITECTURE.md        System design overview
 │   ├── SECURITY_MODEL.md      Threat model and guarantees
 │   ├── ROADMAP.md             Phased build plan
+│   ├── BUGS.md                Open bugs, limitations, deferrals, manual checks
+│   ├── PHASE_9B_DEFERRED.md   What's blocked on real-world signing infra
+│   ├── PHASE_*_LOG.md         Per-phase build logs
 │   ├── GLOSSARY.md            Shared vocabulary
 │   ├── architecture/
 │   │   ├── schema-extraction.md
@@ -38,25 +43,23 @@ sql-mate/
 │   │   ├── llm-provider.md
 │   │   ├── sql-generation.md
 │   │   ├── sql-validation.md
-│   │   ├── query-execution.md
+│   │   ├── query-execution.md (deprecation marker — module removed in Phase 9)
 │   │   └── ui-flows.md
-│   └── decisions/             Architecture Decision Records (ADRs)
-│       ├── 0001-tauri-over-electron.md
-│       ├── 0002-byo-api-key.md
-│       ├── 0003-openai-compat-fallback.md
-│       └── 0004-sqlglot-for-validation.md
-├── src/                       Frontend (TypeScript + React)
-└── src-tauri/                 Backend (Rust)
+│   └── decisions/             Architecture Decision Records (0001–0013)
+├── sidecar/                   Python sqlglot validator (line-delimited JSON IPC)
+├── src/                       Frontend (TypeScript + React, native <dialog> modals)
+└── src-tauri/                 Backend (Rust, Tauri 2)
 ```
 
-## Tech stack (current plan)
+## Tech stack (as shipped)
 
-- **Shell**: Tauri 2.x (Rust backend, web frontend, ~10MB binaries, native keychain access)
-- **Frontend**: TypeScript, React, Tailwind CSS
+- **Shell**: Tauri 2.x (Rust backend, WebView frontend, native installer per OS)
+- **Frontend**: TypeScript, React, hand-rolled CSS (no Tailwind), hand-rolled SQL syntax highlighter
 - **Backend**: Rust, with Python sidecar for `sqlglot` validation
-- **Database drivers**: `sqlx` (Rust) for Postgres, MySQL, SQLite, MSSQL
-- **LLM**: BYO key — Anthropic SDK + OpenAI SDK as first-class, OpenAI-compatible HTTP for everything else
-- **Local storage**: SQLCipher-encrypted SQLite for schema cache, query history, and secrets. OS keychain integration deferred to Phase 7, see [ADR 0008](docs/decisions/0008-no-keychain-in-phase-2.md).
+- **Database drivers**: `sqlx` for Postgres + MySQL schema extraction. SQLite (user database) and SQL Server are deferred per ADR 0012; the dropdown surfaces them as disabled.
+- **LLM**: BYO key — `AnthropicProvider`, `OpenAIProvider`, and `OpenAICompatibleProvider` (Groq, OpenRouter, Azure, etc.) via closed-enum dispatch per ADR 0010
+- **Local storage**: SQLCipher-encrypted SQLite for schema cache, embeddings, redactions, annotations, history, provider configs, settings. SQLCipher key in a sibling file. OS keychain deferred per [ADR 0008](docs/decisions/0008-no-keychain-in-phase-2.md).
+- **PDF**: `printpdf` for the security review pack (no external font files)
 
 Licence
 Private: all rights reserved.

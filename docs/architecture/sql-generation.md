@@ -79,6 +79,6 @@ If redaction was applied, the SQL response is run through the inverse mapping to
 
 ## Confidence handling
 
-`confidence` is optional from the model. When present, it informs UI emphasis but never gates execution. The user always sees the SQL and decides whether to run it.
+`confidence` is optional from the model. When present, it informs UI emphasis. The user always sees the SQL and decides whether to copy and run it (the app itself does not run SQL; see `query-execution.md`).
 
-Low confidence (under 0.5 by default) shows a warning banner: "The model is uncertain about this query. Review carefully before running."
+Low confidence (under 0.5 by default) shows a warning banner: "The model is uncertain about this query. Review carefully before running it elsewhere."

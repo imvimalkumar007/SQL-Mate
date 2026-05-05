@@ -1,73 +1,81 @@
-# Query execution
+# Query execution — removed in Phase 9
 
-Runs validated SQL against the user's database. Returns results to the frontend without sending them anywhere else.
+> **The query-execution module no longer exists.** Phase 9's UX overhaul
+> removed the run-query path entirely. The app generates and validates SQL
+> but does not execute it; users copy the validated SQL and run it in a
+> tool of their choice (psql, DBeaver, DataGrip, etc.).
 
-## Inputs
+## Why this doc still exists
 
-- A `ValidatedSql` struct from the validator
-- The connection profile used to extract the schema
-- Execution settings: row cap, timeout
+For archaeology. The original design had three Rust modules — extractor,
+validator, **executor** — and four Tauri commands of which `execute_query`
+ran the validated SQL in a read-only transaction with a row cap and
+timeout. Phase 3 shipped that path; Phases 4 through 8 layered redaction
+and provider abstraction on top of it.
 
-## Outputs
+Phase 9 dropped it for two reasons:
 
-- A result set, returned to the frontend for display
-- A history record (question, SQL, row count, duration) written to the schema store
+1. **Stronger security posture.** "We do not execute generated SQL" is a
+   simpler claim than "we execute it in a read-only transaction with
+   defense in depth." There is no execution code path inside the app at
+   all — a buggy LLM, a hostile prompt-injection, and a software bug here
+   all converge on the same outcome: a SQL string in the UI that does
+   nothing until the user takes external action.
+2. **User feedback.** The user testing Phase 8 explicitly asked for the
+   button to be removed. Reading their preference as a signal about the
+   product's audience: regulated data engineers already have SQL tools
+   they trust; the "run in-app" affordance was not pulling weight.
 
-## Mechanism
+## What still ships in service of T2
 
-A read-only transaction is opened with the configured timeout. The query is executed. Results are streamed back row-by-row up to the row cap, then truncated.
+`SECURITY_MODEL.md` T2 (destructive SQL executed against the user's
+database) used to depend on three layers: Rust pre-parse, sqlglot AST
+walk in the Python sidecar, and the executor's read-only transaction +
+row cap + timeout. With execution removed, the third layer is gone but
+the first two still ship as defense in depth even though no execution
+path consumes their verdict. They protect users in the case where the
+displayed SQL would be destructive if copy-pasted into a SQL tool that
+doesn't gate on read-only.
 
-```rust
-async fn execute(
-    sql: &ValidatedSql,
-    conn: &Connection,
-    settings: ExecutionSettings,
-) -> Result<ExecutionResult, ExecutionError> {
-    let mut tx = conn.begin_read_only().await?;
-    tx.set_statement_timeout(settings.timeout).await?;
-    let stream = sqlx::query(&sql.text).fetch(&mut tx).take(settings.row_cap);
-    // ... collect into ExecutionResult ...
-    tx.rollback().await?;  // read-only, but we explicitly rollback to be safe
-    Ok(result)
-}
-```
+The schema-extraction code path still opens a database connection — for
+the metadata-only `information_schema` query — but that is the only DB
+connection the app opens. See `extract/postgres.rs` and `extract/mysql.rs`
+for the verbatim queries; they are also reproduced in the security
+review pack PDF.
 
-The transaction is rolled back at the end regardless of outcome. Read-only transactions cannot make changes, but explicitly rolling back is defense in depth and clearer in audit.
+## What was removed
 
-## Settings
+For the historical record, removed in [phase-9 UX overhaul commits]:
 
-- `row_cap`: default 1,000. User-configurable up to 100,000 in settings. Above 100,000, results are not streamed to the UI grid (which would be unusable) but the user can opt to export results to a local CSV file. The export still happens on-machine; the file is written to a user-chosen location.
-- `timeout`: default 30 seconds. User-configurable up to 5 minutes.
+- `commands::execute_query` Tauri command
+- `execute_postgres` / `execute_mysql` per-dialect helpers
+- `decode_pg_value` / `decode_mysql_value` row decoders
+- `format_offset_dt` / `format_primitive_dt` time formatters
+- `ExecutionResult` struct
+- `ROW_CAP` (1,000) and `QUERY_TIMEOUT_MS` (30,000) constants
+- `Store::update_history_execution` method (no caller left)
+- `futures` crate dep (only used for `Stream::next` in the executor)
+- The "Run query" button, results table, and CSV export affordances
+  in the frontend
 
-## Pre-execution `EXPLAIN` (Phase 3 enhancement)
+The `history` table still exists and is still written to at generation
+time, but no longer carries `was_executed` / `execution_row_count` /
+`execution_duration_ms` from real executions — those columns persist in
+the schema for historical compatibility but only ever hold their default
+values (0 / NULL / NULL) going forward.
 
-Before actually executing, we optionally run `EXPLAIN` on the query in the same read-only transaction. This catches schema mismatches and obvious mistakes (missing indexes that would make the query take forever) without touching real data. `EXPLAIN` is cheap on most databases.
+## If execution is reintroduced later
 
-If `EXPLAIN` reports an issue (Postgres returns errors on bad queries here), surface it before running the actual query. Also surface estimated row count if available; if it dwarfs the user's row cap, warn them.
+The pattern in Phase 3 was sound: read-only transaction, row cap,
+timeout, no row data leaving Rust except into the frontend display
+state. If a future phase reintroduces it (e.g., for a power-user tier
+that opts into in-app execution), the implementation should mirror what
+was there — see git history for `commands::execute_postgres` /
+`execute_mysql` at the merge of phase-9 for the working code.
 
-## What happens to results
-
-Results live in two places only:
-1. **Frontend state.** Displayed in a virtualized grid. Cleared when the user navigates away or runs a new query.
-2. **Optional user export.** If the user clicks "export," a CSV is written to a path of their choosing.
-
-Results are never:
-- Written to the schema store
-- Included in logs
-- Sent to the LLM
-- Sent to us
-
-The `history` table records that the query was executed and how many rows came back, but not the rows themselves.
-
-## Errors
-
-| Error | UI behavior |
-|---|---|
-| Timeout | "Query timed out after Ns. You can increase the timeout in settings." |
-| Permission denied (write attempted) | "Database refused the query. This should not happen if validation passed; please report this." (and indeed it shouldn't — this would indicate a validator gap) |
-| Connection lost | "Lost connection to database. Reconnect and try again." |
-| Row cap reached | Results are shown with a banner: "Showing first N rows. Increase row cap in settings or export to CSV for full results." |
-
-## Concurrency
-
-Only one query per connection executes at a time in v1. The user can have multiple connection profiles, each with their own active query, but a single profile is single-threaded. This matches user expectation (you don't run two analytical queries against the same DB simultaneously) and avoids needing connection pooling complexity.
+The `sqlx` `time` / `uuid` features in `Cargo.toml` exist for that
+hypothetical reintroduction. They were added in Phase 6.5 to let the
+executor decode timestamp / UUID columns and stayed in the manifest
+even after the decoders were deleted, because removing them would
+require a Cargo.toml round-trip that's not worth doing for a feature
+that may come back.

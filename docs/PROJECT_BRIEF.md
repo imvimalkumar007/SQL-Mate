@@ -2,7 +2,7 @@
 
 ## What we are building
 
-A desktop application that lets data professionals ask questions of their database in natural language and get back a SQL query they can review and execute, with strong guarantees that no row data and no live database connection ever leave the user's machine.
+A desktop application that lets data professionals ask questions of their database in natural language and get back a validated read-only SQL query, with strong guarantees that no row data ever leaves the user's machine. Users review the generated SQL, copy it, and run it in whatever SQL tool they already trust — the app does not execute SQL itself.
 
 ## Why now
 
@@ -24,8 +24,8 @@ We are not designing v1 for non-technical business users. We are not designing v
 
 - The user can extract schema from their own database and load it into the app in under five minutes, without writing any SQL themselves.
 - The user can ask a typical analytical question ("what were Q3 sales by region, joined with customer tier") and get a correct SQL query back roughly 80% of the time on a schema with up to 100 tables.
-- The user can defend the tool to their security team using a single page of plain-language documentation. The security team can verify the data flow claims without trusting us.
-- The user runs the generated query against their database from inside the app and sees results. The results never leave their machine.
+- The user can defend the tool to their security team using a single page of plain-language documentation, plus the in-app exported security review PDF. The security team can verify the data flow claims without trusting us.
+- The user copies the generated SQL into their existing SQL tool and runs it there. The app itself does not execute SQL — separating generation from execution is a deliberate security choice, not a deficiency.
 
 ## Non-goals
 
@@ -34,7 +34,7 @@ These are explicitly not part of v1. They may come later, but mentioning them is
 - **Hosted SaaS mode.** No web app, no shared backend, no team workspaces.
 - **Writing queries.** No `INSERT`, `UPDATE`, `DELETE`, schema migrations, or DDL. Read-only only.
 - **Shared schema annotations or query history across users.** Single-user, local-only.
-- **Auto-fixing or auto-running queries.** The user always reviews the SQL before execution. Always.
+- **Auto-fixing or executing queries.** The app generates and validates SQL, full stop. Users run it themselves in their existing SQL tool. (Phase 9's UX overhaul removed the in-app run-query button and the executor backend entirely; see `docs/architecture/query-execution.md` for the archaeology marker and `SECURITY_MODEL.md` T2 for the rationale.)
 - **Fine-tuned models or vector databases for schema retrieval beyond a simple embedding cache.** Schema retrieval matters, but we start with the simplest thing that works for ~100 tables and only get fancier if needed.
 - **Mobile.** Desktop only.
 - **Free tier with our own LLM key.** BYO key from day one.
