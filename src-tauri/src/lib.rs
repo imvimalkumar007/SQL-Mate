@@ -9,25 +9,39 @@ mod security_pdf;
 mod sidecar;
 mod store;
 
+use std::str::FromStr;
+
 use request_log::RequestLog;
 use sidecar::SidecarManager;
 use store::Store;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, WindowEvent};
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
-const WIDGET_HOTKEY: &str = "CommandOrControl+Shift+Space";
+pub const DEFAULT_WIDGET_HOTKEY: &str = "CommandOrControl+Shift+Space";
+pub const SETTING_WIDGET_HOTKEY: &str = "widget_hotkey";
+pub const SETTING_WIDGET_HOTKEY_ERROR: &str = "widget_hotkey_error";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Phase 11: auto-start on Windows boot. Disabled by default; user
+        // opts in via Settings → Widget. Plugin manages the OS-level
+        // registry entry; our `get/set_autostart_enabled` commands proxy
+        // through.
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, shortcut, event| {
-                    if event.state == ShortcutState::Pressed
-                        && shortcut.matches(Modifiers::SHIFT | Modifiers::CONTROL, Code::Space)
-                    {
+                .with_handler(|app, _shortcut, event| {
+                    // Match by triggered event rather than by hotkey
+                    // identity — the hotkey may have been re-registered
+                    // since startup, but only one global shortcut is ever
+                    // active at a time so any press is the widget summon.
+                    if event.state == ShortcutState::Pressed {
                         toggle_widget_window(app);
                     }
                 })
@@ -76,20 +90,23 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Register the global hotkey. If unavailable, we surface the error
-            // in stderr but otherwise continue — the user can still summon the
-            // widget via the tray icon.
-            if let Err(e) = app
-                .global_shortcut()
-                .register(Shortcut::new(
-                    Some(Modifiers::SHIFT | Modifiers::CONTROL),
-                    Code::Space,
-                ))
-            {
-                eprintln!(
-                    "global hotkey {WIDGET_HOTKEY} could not be registered: {e}. \
-                     Use the tray icon to summon the widget."
-                );
+            // Phase 11: load the hotkey from settings (or use the default),
+            // register it, and persist any error to settings so the
+            // main-window settings UI can surface it.
+            let store_state: tauri::State<Store> = app.state();
+            let configured_hotkey = read_setting(&store_state, SETTING_WIDGET_HOTKEY)
+                .unwrap_or_else(|| DEFAULT_WIDGET_HOTKEY.to_string());
+            match register_hotkey(app.handle(), &configured_hotkey) {
+                Ok(()) => {
+                    let _ = clear_setting(&store_state, SETTING_WIDGET_HOTKEY_ERROR);
+                }
+                Err(e) => {
+                    eprintln!(
+                        "global hotkey {configured_hotkey} could not be registered: {e}. \
+                         Use the tray icon to summon the widget; rebind in Settings → Widget."
+                    );
+                    let _ = write_setting(&store_state, SETTING_WIDGET_HOTKEY_ERROR, &e);
+                }
             }
 
             // Hide the widget when the user clicks elsewhere — matches the
@@ -164,6 +181,12 @@ pub fn run() {
             commands::show_widget,
             commands::hide_widget,
             commands::show_main_window,
+            commands::get_widget_hotkey,
+            commands::set_widget_hotkey,
+            commands::get_widget_hotkey_error,
+            commands::get_autostart_enabled,
+            commands::set_autostart_enabled,
+            commands::clamp_widget_to_visible_monitor,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -171,6 +194,7 @@ pub fn run() {
 
 fn show_widget_window(app: &AppHandle) {
     if let Some(widget) = app.get_webview_window("widget") {
+        commands::ensure_widget_on_visible_monitor(&widget);
         let _ = widget.show();
         let _ = widget.set_focus();
         let _ = app.emit_to("widget", "widget://focus", ());
@@ -183,6 +207,7 @@ fn toggle_widget_window(app: &AppHandle) {
         if visible {
             let _ = widget.hide();
         } else {
+            commands::ensure_widget_on_visible_monitor(&widget);
             let _ = widget.show();
             let _ = widget.set_focus();
             let _ = app.emit_to("widget", "widget://focus", ());
@@ -196,4 +221,44 @@ fn show_main_window_internal(app: &AppHandle) {
         let _ = main.unminimize();
         let _ = main.set_focus();
     }
+}
+
+/// Parse a hotkey string and register it as the global shortcut. Unregisters
+/// any previously-active shortcut first so re-binding always replaces.
+pub fn register_hotkey(app: &AppHandle, hotkey: &str) -> Result<(), String> {
+    let gs = app.global_shortcut();
+    let _ = gs.unregister_all();
+    let parsed = Shortcut::from_str(hotkey).map_err(|e| format!("invalid hotkey: {e}"))?;
+    gs.register(parsed).map_err(|e| e.to_string())
+}
+
+// ---------- helper: synchronous settings access (used at startup) ----------
+
+fn read_setting(store: &Store, key: &str) -> Option<String> {
+    let conn = store.lock();
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = ?1",
+        rusqlite::params![key],
+        |row| row.get::<_, String>(0),
+    )
+    .ok()
+}
+
+fn write_setting(store: &Store, key: &str, value: &str) -> Result<(), rusqlite::Error> {
+    let conn = store.lock();
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        rusqlite::params![key, value],
+    )
+    .map(|_| ())
+}
+
+fn clear_setting(store: &Store, key: &str) -> Result<(), rusqlite::Error> {
+    let conn = store.lock();
+    conn.execute(
+        "DELETE FROM settings WHERE key = ?1",
+        rusqlite::params![key],
+    )
+    .map(|_| ())
 }
