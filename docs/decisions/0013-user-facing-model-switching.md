@@ -2,18 +2,16 @@
 
 ## Status
 
-Accepted. Implementation deferred to its own future phase; this ADR captures
-the decision while it's fresh and is not a commitment that the work happens
-in any particular session.
+Accepted.
 
 ## Context
 
-Through Phase 6, the app has supported multiple providers via the
-abstraction in `llm-provider.md`, but provider and model choice has been
-configured once and treated as static. Users have asked to switch
+Through Phase 6, the app supports multiple providers via the abstraction
+in `llm-provider.md`, but provider and model choice has been configured
+once per setup and treated as static. Users have asked to switch
 providers and models per-session to manage cost — a 100-table schema
-question on Opus 4.7 costs ~10x more than on Haiku 4.5, and not every
-question warrants the most capable model.
+question on Opus 4.7 costs roughly 10x more than on Haiku 4.5, and not
+every question warrants the most capable model.
 
 The architecture was designed to make this possible (the `LlmProvider`
 trait, the model registry, BYO key per provider). What's missing is the
@@ -28,10 +26,8 @@ either before asking. Per-question model choice does not require leaving
 the main flow.
 
 The settings screen continues to be where API keys for each provider are
-stored. Today those keys live in the SQLCipher-encrypted local store; OS
-keychain migration is tracked separately under ADR 0008 and is explicitly
-out of scope for this ADR. The picker reads from configured providers; if
-a provider has no key, it shows as "set up in settings."
+stored. The picker reads from configured providers; if a provider has no
+key, it shows as "set up in settings."
 
 Default model selection on first use of a provider follows this order:
 
@@ -80,7 +76,7 @@ on the next question.
   to Sonnet then Opus on validation failure or low confidence.
   Rejected for now because it adds latency (failed calls still cost
   time and money) and obscures which model produced which result.
-  Worth revisiting in a follow-up ADR if user feedback shows manual
+  Worth revisiting in a future ADR if user feedback shows manual
   switching is too much friction.
 - **Settings-only switching.** Forces users to leave the query flow to
   change models. Rejected as too coarse for the cost-management
@@ -91,7 +87,8 @@ on the next question.
 
 ## Security implications
 
-None new. Provider switching uses the existing key storage (SQLCipher
-local store today, OS keychain pending ADR 0008). Schema metadata still
-goes only to the user-selected provider for that specific request. No
-row data path is changed.
+None new. Provider switching uses the same key storage as the rest of
+the app. Per ADR 0008, keys currently live in the SQLCipher-encrypted
+local store; the keychain migration is a separate piece of work tracked
+elsewhere. Schema metadata still goes only to the user-selected provider
+for that specific request. No row data path is changed.
