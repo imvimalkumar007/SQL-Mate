@@ -76,12 +76,15 @@ export type ProviderConfig = {
   created_at: number;
 };
 
+export type CostTier = "low" | "mid" | "high";
+
 export type ModelRegistryModel = {
   id: string;
   name: string;
   context_window: number;
   supports_caching: boolean;
   supports_structured_output: boolean;
+  cost_tier: CostTier;
   recommended_for?: string;
 };
 
@@ -111,6 +114,7 @@ export type EmbeddingStats = {
 export type GenerationResult = {
   sql: string;
   history_id: string;
+  model: string;
 };
 
 export type HistoryEntry = {
