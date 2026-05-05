@@ -4,7 +4,7 @@ Local persistence for schema models, user annotations, redaction rules, query hi
 
 ## Storage location
 
-`<app data dir>/sql-mate/store.db` — a single SQLite file, encrypted with SQLCipher. The encryption key is derived from a value stored in the OS keychain.
+`<app data dir>/sql-mate/store.db` — a single SQLite file, encrypted with SQLCipher. The encryption key is loaded from `<app data dir>/sql-mate/.db-key` (32 random bytes generated on first launch). The original spec called for the key to be derived from a value held in the OS keychain; that integration is deferred per ADR 0008 and revisited in Phase 7.
 
 App data dir resolves to:
 - macOS: `~/Library/Application Support/sql-mate/`
@@ -23,7 +23,7 @@ CREATE TABLE connection_profiles (
   port INTEGER NOT NULL,
   database_name TEXT NOT NULL,
   username TEXT NOT NULL,
-  keychain_ref TEXT NOT NULL,  -- reference to OS keychain entry holding the password
+  password TEXT NOT NULL,      -- DB password; encrypted at rest by SQLCipher (Phase 2). ADR 0008 defers OS-keychain storage to Phase 7.
   created_at INTEGER NOT NULL,
   last_used_at INTEGER
 );
@@ -80,10 +80,14 @@ CREATE TABLE settings (
 
 ## What is deliberately not stored
 
-- Database passwords. Stored in OS keychain only.
-- LLM API keys. Stored in OS keychain only.
 - Query results. Held in frontend state for the duration of the session, never persisted.
 - Schema content from row data. We never have any.
+
+## Secrets
+
+- **Database passwords** are stored in the `connection_profiles.password` column inside the SQLCipher-encrypted store (Phase 2). Original spec was OS keychain; deferred per ADR 0008.
+- **LLM API keys** are stored in the `settings` table under key `anthropic_api_key`, also inside the SQLCipher-encrypted store. Same deferral as above.
+- **The SQLCipher key itself** is in `<app data dir>/sql-mate/.db-key`, sitting next to the encrypted store with normal user-mode ACLs. Rebuilding the keychain story is a Phase 7 follow-up.
 
 ## Migrations
 
@@ -91,16 +95,18 @@ Schema versions are managed via a `schema_version` row in `settings`. Migrations
 
 ## Key derivation
 
-The SQLCipher key is derived as follows:
+The SQLCipher key is derived as follows (Phase 2 implementation; ADR 0008 commits us to revisit in Phase 7):
 
 1. On first launch, generate 32 bytes from a CSPRNG.
-2. Store those bytes in the OS keychain under the entry name `sql-mate.db-key`.
-3. On every subsequent launch, read the bytes from the keychain and pass to SQLCipher.
+2. Write those bytes to `<app data dir>/sql-mate/.db-key`.
+3. On every subsequent launch, read the bytes from the file and pass to SQLCipher.
 
-If the keychain entry is missing (e.g., the user wiped their keychain), the database is unreadable and the user must reset it. We do not provide a recovery mechanism beyond reset, by design — recoverable encryption is not encryption.
+If the key file is missing or corrupted, the database is unreadable and the user must reset it. We do not provide a recovery mechanism beyond reset, by design — recoverable encryption is not encryption.
+
+The intended longer-term scheme stores the key in the OS keychain (`(sql-mate, db-key)`); see ADR 0008 for why we deferred and what would unblock the migration.
 
 ## Backup and export
 
-The user can export their schema and annotations as JSON via a settings menu. Exports do not include keychain references or the encryption key. They can be imported on another machine, after which the user re-enters credentials.
+The user can export their schema and annotations as JSON via a settings menu. Exports do not include passwords or the encryption key. They can be imported on another machine, after which the user re-enters credentials.
 
 History export is separate and produces a JSON file with question text, generated SQL, and timing — but never results.

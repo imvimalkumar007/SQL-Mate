@@ -14,7 +14,7 @@ These are not preferences. They are product-defining constraints. Do not relax t
 2. **All LLM calls use the user's own API key.** We do not proxy LLM requests. We do not add a server in the middle. The HTTP request goes from the user's machine directly to the provider they chose.
 3. **Generated SQL is read-only by construction.** Validate the AST before showing it to the user. Reject `INSERT`, `UPDATE`, `DELETE`, `DROP`, `TRUNCATE`, `ALTER`, `CREATE`, `GRANT`, `EXECUTE`, `MERGE`, `CALL`, and `SELECT ... INTO`. Reject CTEs that wrap mutations. Read `docs/architecture/sql-validation.md`.
 4. **Database credentials must be read-only at the database level.** Application-level checks are defense in depth, not the primary control. Document this clearly to users; provide setup snippets per dialect.
-5. **Secrets live in the OS keychain.** Never in config files, never in the SQLite cache, never in logs.
+5. **Secrets are encrypted at rest, never in plaintext.** As of Phase 2, secrets (API keys, DB passwords, SQLCipher key reference) live in the SQLCipher-encrypted local SQLite store, with the SQLCipher key in a sibling file under the app data dir. The longer-term target is OS keychain (macOS Keychain / Windows Credential Manager / Linux Secret Service) — see ADR 0008 for the deferral. Either way: never in plaintext config files, never alongside logs, never in any telemetry payload.
 6. **No telemetry without explicit opt-in.** Default off. Opt-in pings are anonymous and never include schema names, query text, or any database content.
 
 If a task seems to require violating one of these, raise it before writing code. There is almost always a different design that satisfies the constraint.
