@@ -73,6 +73,19 @@ These are the threats we design against, in priority order.
 
 **Mitigation:** We pin exact versions of all dependencies in `Cargo.lock`, `package-lock.json`, and the Python sidecar's lockfile. We minimize the number of dependencies, especially in the LLM call path. We do not auto-update dependencies. Releases are signed.
 
+### T8: Floating widget surface (Phase 10 / ADR 0014)
+
+**Scenario:** The Windows-only floating widget — frameless, always-on-top, summoned by a global hotkey — could be misread as something more invasive (overlay sensing, screen capture, keystroke logging) or could itself become a leak vector.
+
+**Mitigation, by claim:**
+
+- **The widget is a window. It does not read the screen.** No `BitBlt`, no `GraphicsCaptureSession`, no Direct3D capture surface. The Tauri capabilities manifest at `src-tauri/capabilities/default.json` lists every permission the widget has — none touch screen capture.
+- **The widget does not capture keystrokes outside its own input box.** The global hotkey (`tauri-plugin-global-shortcut`) only listens for the configured combo (`Ctrl+Shift+Space` by default, rebindable in Settings) and triggers the widget's own toggle handler. No keylogger.
+- **No external font CDN.** The original prototype loaded Inter, JetBrains Mono, and Material Symbols from `fonts.googleapis.com`; the shipped widget bundles inline-SVG icons (`src/widget-icons.tsx`) and uses system font fallbacks, so no outbound request to Google. The two endpoints listed at the top of `ARCHITECTURE.md` (LLM provider + user database) remain the only outbound destinations.
+- **No outbound communication from the widget itself.** All Tauri commands the widget invokes are the same ones the main window invokes — `generate_sql`, `validate_sql`, `get_persisted_schema`, etc. The widget is a new view, not a new network surface.
+- **`transparent: true` on the window** (so the rounded corners don't leak white) does not give the widget any visibility into what's underneath it. It just means the OS doesn't paint a backdrop in the area outside the widget's HTML shape.
+- **Auto-start on Windows boot** (`tauri-plugin-autostart`, opt-in via Settings → "Start with Windows") writes a value to `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` so the app launches at login. The widget itself stays hidden in the tray until summoned. No background telemetry, no eager LLM calls — same posture as the manually-launched app.
+
 ## Verification — what a security review can check
 
 A reviewer should be able to confirm our claims by:
@@ -84,6 +97,8 @@ A reviewer should be able to confirm our claims by:
 5. Running the app with a deliberately malformed schema or adversarial column comments and observing that no information from those fields can cause data exfiltration.
 6. Inspecting log files after extended use and confirming no schema or query content is present.
 7. Exporting the security review PDF (Settings → Security review pack → Export) and verifying every claim in it against the live state.
+8. Reading `src-tauri/capabilities/default.json` and confirming that the widget's permission list (Phase 10) is bounded to window control (`set-size`, `set-position`, `show`, `hide`, `set-focus`, `is-visible`, `unminimize`), event listening, the global-shortcut allow-list, and the autostart allow-list. No screen-capture or input-injection permissions.
+9. Inspecting `src/widget.html` and `src/Widget.tsx` and confirming no third-party script tags, no `<link rel="stylesheet" href="https://...">`, no `fetch()` to anywhere except the existing Tauri command surface.
 
 ## Disclosure
 

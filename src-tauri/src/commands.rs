@@ -964,9 +964,14 @@ pub async fn set_widget_position(
 #[tauri::command]
 pub async fn set_widget_pill_mode(
     pill_mode: bool,
+    app: AppHandle,
     store: State<'_, Store>,
 ) -> Result<(), String> {
-    store.set_widget_pill_mode(pill_mode).map_err(err)
+    store.set_widget_pill_mode(pill_mode).map_err(err)?;
+    // Apply the new size from Rust — doing it here avoids a race in JS
+    // where the React render happens with stale window dimensions.
+    crate::apply_widget_size(&app, pill_mode);
+    Ok(())
 }
 
 #[derive(Debug, Deserialize)]
@@ -1089,8 +1094,9 @@ pub async fn clamp_widget_to_visible_monitor(app: AppHandle) -> Result<(), Strin
 }
 
 /// If the widget's current position is outside every available monitor's
-/// work area (e.g. the user disconnected the monitor it was on), move it to
-/// the center of the primary monitor. No-op if already on a visible monitor.
+/// work area (e.g. the user disconnected the monitor it was on, or this is
+/// the first time it's been shown and Tauri put it at 0,0), move it to a
+/// visible spot — top-right corner of the primary monitor.
 pub fn ensure_widget_on_visible_monitor(widget: &tauri::WebviewWindow) {
     let monitors = match widget.available_monitors() {
         Ok(m) => m,
@@ -1099,38 +1105,44 @@ pub fn ensure_widget_on_visible_monitor(widget: &tauri::WebviewWindow) {
     if monitors.is_empty() {
         return;
     }
-    let pos = match widget.outer_position() {
-        Ok(p) => p,
-        Err(_) => return,
+    // Default size if we can't read it (fresh window).
+    let size = widget.outer_size().ok();
+    let widget_w = size.map(|s| s.width as i32).unwrap_or(400);
+    let widget_h = size.map(|s| s.height as i32).unwrap_or(500);
+
+    // Default position to top-right corner of primary if we can't read it.
+    let pos = widget.outer_position().ok();
+    let widget_x = pos.map(|p| p.x);
+    let widget_y = pos.map(|p| p.y);
+
+    let on_a_monitor = match (widget_x, widget_y) {
+        (Some(wx), Some(wy)) => monitors.iter().any(|m| {
+            let mp = m.position();
+            let ms = m.size();
+            let mx = mp.x;
+            let my = mp.y;
+            let mw = ms.width as i32;
+            let mh = ms.height as i32;
+            // A widget "on" a monitor means at least 80px of it overlaps —
+            // a window snapped to (0,0) on a 1px-wide ghost monitor wouldn't
+            // count as on a real one.
+            let overlap_w = (wx + widget_w).min(mx + mw) - wx.max(mx);
+            let overlap_h = (wy + widget_h).min(my + mh) - wy.max(my);
+            overlap_w > 80 && overlap_h > 80
+        }),
+        _ => false,
     };
-    let size = match widget.outer_size() {
-        Ok(s) => s,
-        Err(_) => return,
-    };
-    let widget_x = pos.x;
-    let widget_y = pos.y;
-    let widget_w = size.width as i32;
-    let widget_h = size.height as i32;
-    let on_a_monitor = monitors.iter().any(|m| {
-        let mp = m.position();
-        let ms = m.size();
-        let mx = mp.x;
-        let my = mp.y;
-        let mw = ms.width as i32;
-        let mh = ms.height as i32;
-        widget_x + widget_w > mx
-            && widget_x < mx + mw
-            && widget_y + widget_h > my
-            && widget_y < my + mh
-    });
     if on_a_monitor {
         return;
     }
-    // Off-screen — center on the primary monitor (first in the list).
+
+    // Off-screen / first show — pin to top-right of the primary monitor with
+    // a 24px margin. Easier to find than centered, and matches the Raycast
+    // / Spotlight default-position pattern on Windows.
     let primary = &monitors[0];
     let mp = primary.position();
     let ms = primary.size();
-    let new_x = mp.x + (ms.width as i32 - widget_w) / 2;
-    let new_y = mp.y + (ms.height as i32 - widget_h) / 2;
+    let new_x = mp.x + ms.width as i32 - widget_w - 24;
+    let new_y = mp.y + 24;
     let _ = widget.set_position(tauri::PhysicalPosition::new(new_x, new_y));
 }

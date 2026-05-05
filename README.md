@@ -8,7 +8,7 @@ Most AI SQL tools require either a live database connection to a hosted service 
 
 ## Status
 
-Phases 1–9a shipped. The core path (connect → extract → ask → generate → validate → copy) is end-to-end working on Postgres and MySQL. Phase 9b (signed installers, notarization, distribution) is deferred — see `docs/PHASE_9B_DEFERRED.md`. Phase 10 (first five users) is product, not code.
+Phases 1–11 shipped. The core path (connect → extract → ask → generate → validate → copy) is end-to-end working on Postgres and MySQL. Phase 10 added a Windows-only floating widget summoned by a global hotkey (per ADR 0014); Phase 11 added hotkey customization, multi-monitor safety, and start-with-Windows. Phase 9b (signed installers, notarization, distribution) is deferred — see `docs/PHASE_9B_DEFERRED.md`. Phase 12 (first five users) is product, not code.
 
 ## Where to start
 
@@ -45,21 +45,26 @@ sql-mate/
 │   │   ├── sql-validation.md
 │   │   ├── query-execution.md (deprecation marker — module removed in Phase 9)
 │   │   └── ui-flows.md
-│   └── decisions/             Architecture Decision Records (0001–0013)
+│   ├── design/
+│   │   ├── widget-prototype.html  Visual reference for all six widget states
+│   │   └── widget-design-spec.md  Authoritative widget design spec (ADR 0014)
+│   └── decisions/             Architecture Decision Records (0001–0014)
 ├── sidecar/                   Python sqlglot validator (line-delimited JSON IPC)
-├── src/                       Frontend (TypeScript + React, native <dialog> modals)
+├── src/                       Frontend: main window (App.tsx) + widget window (Widget.tsx)
+├── widget.html                Vite entry point for the widget window
 └── src-tauri/                 Backend (Rust, Tauri 2)
 ```
 
 ## Tech stack (as shipped)
 
-- **Shell**: Tauri 2.x (Rust backend, WebView frontend, native installer per OS)
-- **Frontend**: TypeScript, React, hand-rolled CSS (no Tailwind), hand-rolled SQL syntax highlighter
-- **Backend**: Rust, with Python sidecar for `sqlglot` validation
+- **Shell**: Tauri 2.x (Rust backend, WebView frontend, native installer per OS). Two windows in one app: the main administrative window and the floating widget (per ADR 0014).
+- **Frontend**: TypeScript, React. Two Vite entry points (`index.html`, `widget.html`) with a shared `SqlBlock` component. Hand-rolled SQL syntax highlighter; hand-rolled inline-SVG icons for the widget (no external font CDN).
+- **Backend**: Rust, with Python sidecar for `sqlglot` validation.
+- **Tauri plugins**: `tauri-plugin-global-shortcut` for the widget hotkey, `tauri-plugin-autostart` for the optional start-with-Windows toggle. Tray icon uses Tauri 2's built-in `tray-icon` feature.
 - **Database drivers**: `sqlx` for Postgres + MySQL schema extraction. SQLite (user database) and SQL Server are deferred per ADR 0012; the dropdown surfaces them as disabled.
-- **LLM**: BYO key — `AnthropicProvider`, `OpenAIProvider`, and `OpenAICompatibleProvider` (Groq, OpenRouter, Azure, etc.) via closed-enum dispatch per ADR 0010
-- **Local storage**: SQLCipher-encrypted SQLite for schema cache, embeddings, redactions, annotations, history, provider configs, settings. SQLCipher key in a sibling file. OS keychain deferred per [ADR 0008](docs/decisions/0008-no-keychain-in-phase-2.md).
-- **PDF**: `printpdf` for the security review pack (no external font files)
+- **LLM**: BYO key — `AnthropicProvider`, `OpenAIProvider`, and `OpenAICompatibleProvider` (Groq, OpenRouter, Azure, etc.) via closed-enum dispatch per ADR 0010.
+- **Local storage**: SQLCipher-encrypted SQLite for schema cache, embeddings, redactions, annotations, history, provider configs, widget state, and settings. SQLCipher key in a sibling file. OS keychain deferred per [ADR 0008](docs/decisions/0008-no-keychain-in-phase-2.md).
+- **PDF**: `printpdf` for the security review pack (no external font files).
 
 Licence
 Private: all rights reserved.

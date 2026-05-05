@@ -30,3 +30,11 @@ Terms used throughout the project that have a specific meaning here. When in dou
 
 **Session history.** An in-memory list of past question + generated-SQL pairs from the current app session. Rendered below the current generated SQL. Cleared on restart. (The persisted `history` table is a separate thing, surfaced via `list_history` for any future cross-session UI.)
 
+**Widget.** The Windows-only floating window introduced in Phase 10 (ADR 0014). Frameless, always-on-top, no taskbar entry, summoned by a global hotkey or by left-clicking the system tray icon. Reuses the same backend (`generate_sql`, `validate_sql`, etc.) as the main window — it's a new view, not a new code path. macOS and Linux are deferred.
+
+**Pill.** The collapsed form of the widget — a 220×30 rounded shape showing the connection name, model name, and an expand chevron. The user collapses to the pill via the header's collapse button; clicks the chevron button to expand back. The pill body is the drag region (so users can move the pill around the desktop), and the chevron is a real `<button>` so its click reaches React without the drag region intercepting the event.
+
+**Widget hotkey.** The global keyboard shortcut that toggles widget visibility from anywhere on Windows. `Ctrl+Shift+Space` by default, rebindable in Settings → Widget. Registered via `tauri-plugin-global-shortcut`. If registration fails (another app already owns the combo), the error is written to `widget_hotkey_error` in the `settings` table and surfaced as a banner in Settings.
+
+**Widget state.** A single-row table (`widget_state`) in the SQLCipher store holding last position, last question, last SQL, last validation status, and the `pill_mode` flag. Position and `pill_mode` persist indefinitely; the question / SQL / validation columns are cleared on read if the row is more than 24 hours old.
+

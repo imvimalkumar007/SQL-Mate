@@ -63,6 +63,8 @@ Don't ask, just do:
 - **Reintroducing in-app SQL execution.** Phase 9 removed it. If you find yourself writing code that opens a DB connection outside the schema-extraction module, stop — the security claim "the app does not execute generated SQL" is load-bearing and any change there needs an ADR. See `docs/architecture/query-execution.md`.
 - **Storing the API key in app state.** Read it from the keychain at the moment of the request, never cache it in a long-lived variable.
 - **Accidentally logging schema content.** Logs go to the user's disk but are still a leak vector if the machine is compromised. Log structure, not content. `Extracted 24 tables` is fine; `Extracted tables: customers, orders, ...` is not.
+- **Pulling fonts or icons from a CDN.** The widget originally used `fonts.googleapis.com` for Inter / JetBrains Mono / Material Symbols. Shipping that would add a network destination not listed in `SECURITY_MODEL.md`. Use system font fallbacks; for icons, inline SVG (`src/widget-icons.tsx`). Same rule applies to the main app.
+- **Doing widget window resize from JS.** Window resize was originally `await getCurrentWindow().setSize(...)` in a React `useEffect` — it raced the React render and could leave the pill DOM mounted at full-screen size. Resize lives in Rust now (`apply_widget_size_from_store` runs before every `widget.show()`). If you find yourself reaching for `LogicalSize` from `@tauri-apps/api/window`, stop and add a Rust command instead.
 
 ## When in doubt
 

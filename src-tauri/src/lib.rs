@@ -16,10 +16,17 @@ use sidecar::SidecarManager;
 use store::Store;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, WindowEvent};
+use tauri::{AppHandle, Emitter, LogicalSize, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
-pub const DEFAULT_WIDGET_HOTKEY: &str = "CommandOrControl+Shift+Space";
+const WIDGET_EXPANDED: (f64, f64) = (400.0, 500.0);
+const WIDGET_PILL: (f64, f64) = (220.0, 30.0);
+
+// Windows-only per ADR 0014. Use "Ctrl" rather than "CommandOrControl"
+// because the latter is a legacy alias that tauri-plugin-global-shortcut's
+// FromStr parser does not always accept across versions; "Ctrl" parses
+// reliably.
+pub const DEFAULT_WIDGET_HOTKEY: &str = "Ctrl+Shift+Space";
 pub const SETTING_WIDGET_HOTKEY: &str = "widget_hotkey";
 pub const SETTING_WIDGET_HOTKEY_ERROR: &str = "widget_hotkey_error";
 
@@ -92,35 +99,46 @@ pub fn run() {
 
             // Phase 11: load the hotkey from settings (or use the default),
             // register it, and persist any error to settings so the
-            // main-window settings UI can surface it.
+            // main-window settings UI can surface it. If a previously-saved
+            // hotkey fails to parse or register (this happened during Phase
+            // 11 development with the "CommandOrControl" alias), fall back
+            // to the hardcoded default so the user has a working hotkey
+            // without having to rebind by hand.
             let store_state: tauri::State<Store> = app.state();
             let configured_hotkey = read_setting(&store_state, SETTING_WIDGET_HOTKEY)
                 .unwrap_or_else(|| DEFAULT_WIDGET_HOTKEY.to_string());
-            match register_hotkey(app.handle(), &configured_hotkey) {
+            let registered = register_hotkey(app.handle(), &configured_hotkey)
+                .or_else(|e1| {
+                    eprintln!(
+                        "configured hotkey {configured_hotkey:?} could not be registered: {e1}. \
+                         Falling back to default {DEFAULT_WIDGET_HOTKEY:?}."
+                    );
+                    register_hotkey(app.handle(), DEFAULT_WIDGET_HOTKEY).map_err(|e2| {
+                        format!(
+                            "configured: {e1}; default {DEFAULT_WIDGET_HOTKEY:?}: {e2}"
+                        )
+                    })
+                });
+            match registered {
                 Ok(()) => {
                     let _ = clear_setting(&store_state, SETTING_WIDGET_HOTKEY_ERROR);
+                    println!("widget hotkey registered: press it to summon the widget");
                 }
                 Err(e) => {
                     eprintln!(
-                        "global hotkey {configured_hotkey} could not be registered: {e}. \
+                        "global hotkey could not be registered: {e}. \
                          Use the tray icon to summon the widget; rebind in Settings → Widget."
                     );
                     let _ = write_setting(&store_state, SETTING_WIDGET_HOTKEY_ERROR, &e);
                 }
             }
 
-            // Hide the widget when the user clicks elsewhere — matches the
-            // raycast/spotlight pattern.
-            if let Some(widget) = app.get_webview_window("widget") {
-                let handle = app.handle().clone();
-                widget.on_window_event(move |event| {
-                    if let WindowEvent::Focused(false) = event {
-                        if let Some(w) = handle.get_webview_window("widget") {
-                            let _ = w.hide();
-                        }
-                    }
-                });
-            }
+            // Note: Phase 11 user feedback removed the auto-hide-on-focus-loss
+            // behavior. Starting a drag on Windows briefly transfers focus
+            // to the OS window manager, which fired the handler before the
+            // user could complete the drag — the widget vanished mid-grab.
+            // The widget now stays visible until explicitly dismissed (Esc,
+            // the close button, or clicking the tray icon).
 
             // Spawn the Python sidecar. If startup fails (Python missing,
             // sqlglot not installed, handshake timeout), we surface the
@@ -194,6 +212,7 @@ pub fn run() {
 
 fn show_widget_window(app: &AppHandle) {
     if let Some(widget) = app.get_webview_window("widget") {
+        apply_widget_size_from_store(app, &widget);
         commands::ensure_widget_on_visible_monitor(&widget);
         let _ = widget.show();
         let _ = widget.set_focus();
@@ -207,11 +226,39 @@ fn toggle_widget_window(app: &AppHandle) {
         if visible {
             let _ = widget.hide();
         } else {
+            apply_widget_size_from_store(app, &widget);
             commands::ensure_widget_on_visible_monitor(&widget);
             let _ = widget.show();
             let _ = widget.set_focus();
             let _ = app.emit_to("widget", "widget://focus", ());
         }
+    }
+}
+
+/// Read pill_mode from the store and resize the widget window accordingly.
+/// Doing the resize from Rust *before* the window is shown avoids a race
+/// in the JS side where the React render happened with stale window
+/// dimensions (giving us a pill rendered at full-screen size). This is
+/// called on every show, so the window dimensions always match the
+/// persisted pill_mode flag.
+pub fn apply_widget_size_from_store(app: &AppHandle, widget: &tauri::WebviewWindow) {
+    let store: tauri::State<Store> = app.state();
+    let pill = store
+        .get_widget_state()
+        .ok()
+        .map(|s| s.pill_mode)
+        .unwrap_or(false);
+    let (w, h) = if pill { WIDGET_PILL } else { WIDGET_EXPANDED };
+    let _ = widget.set_size(LogicalSize::new(w, h));
+}
+
+/// Resize to a specific mode and save the new mode to the store. Used by
+/// the collapse / expand commands so JS doesn't have to round-trip a
+/// LogicalSize through Tauri's window plugin.
+pub fn apply_widget_size(app: &AppHandle, pill: bool) {
+    if let Some(widget) = app.get_webview_window("widget") {
+        let (w, h) = if pill { WIDGET_PILL } else { WIDGET_EXPANDED };
+        let _ = widget.set_size(LogicalSize::new(w, h));
     }
 }
 
