@@ -1,6 +1,6 @@
 # SQL Mate: local-first natural language to SQL
 
-A desktop application that lets data professionals ask questions of their database in plain English and get back SQL queries — without ever exposing row data to an LLM or to our infrastructure.
+A desktop application that lets data professionals ask questions of their database in plain English and get back SQL queries without ever exposing row data to an LLM or to our infrastructure.
 
 ## The one-paragraph pitch
 
@@ -56,7 +56,7 @@ sql-mate/
 - **Backend**: Rust, with Python sidecar for `sqlglot` validation
 - **Database drivers**: `sqlx` (Rust) for Postgres, MySQL, SQLite, MSSQL
 - **LLM**: BYO key — Anthropic SDK + OpenAI SDK as first-class, OpenAI-compatible HTTP for everything else
-- **Local storage**: SQLCipher-encrypted SQLite for schema cache, query history, and secrets. OS keychain integration deferred to Phase 7 — see [ADR 0008](docs/decisions/0008-no-keychain-in-phase-2.md).
+- **Local storage**: SQLCipher-encrypted SQLite for schema cache, query history, and secrets. OS keychain integration deferred to Phase 7, see [ADR 0008](docs/decisions/0008-no-keychain-in-phase-2.md).
 
 Licence
 Private: all rights reserved.
