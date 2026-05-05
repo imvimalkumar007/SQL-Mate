@@ -68,7 +68,13 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   -webkit-app-region: drag;
   user-select: none;
 }
-.widget-header > * { -webkit-app-region: no-drag; }
+/* Mark only interactive elements as no-drag — header text + dot stay
+   draggable so the user has a real grip area, not just the gap between
+   left and right groups. */
+.widget-header button { -webkit-app-region: no-drag; }
+.widget-header input,
+.widget-header textarea,
+.widget-header select { -webkit-app-region: no-drag; }
 
 .widget-header-left {
   display: flex;
@@ -395,10 +401,12 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
   -webkit-app-region: drag;
 }
-.pill > * { -webkit-app-region: no-drag; }
+/* Whole pill is draggable. The chevron is decorative — double-click anywhere
+   on the pill expands; no per-element no-drag overrides needed. */
+.pill button { -webkit-app-region: no-drag; }
 .pill .status-dot { width: 6px; height: 6px; }
 .pill .model { color: var(--primary); }
 .pill .sep { color: var(--text-dim); margin: 0 4px; }
-.pill .pill-spacer { flex: 1; -webkit-app-region: drag; }
+.pill .pill-spacer { flex: 1; }
 .pill .pill-chevron { font-size: 14px; color: var(--text-dim); }
 .pill:hover { background: var(--surface-3); }

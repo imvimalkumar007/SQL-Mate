@@ -423,9 +423,9 @@ export function Widget() {
                   Generating
                 </>
               ) : isErrorState ? (
-                <>Try again<span className="shortcut">⌘↵</span></>
+                <>Try again<span className="shortcut">Ctrl ↵</span></>
               ) : (
-                <>Generate<span className="shortcut">⌘↵</span></>
+                <>Generate<span className="shortcut">Ctrl ↵</span></>
               )}
             </button>
           </div>
