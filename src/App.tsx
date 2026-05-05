@@ -148,6 +148,14 @@ function App() {
   const [pdfStatus, setPdfStatus] = useState<{ path: string; bytes: number } | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
 
+  // Phase 11 widget polish
+  const [widgetHotkey, setWidgetHotkey] = useState<string>("CommandOrControl+Shift+Space");
+  const [widgetHotkeyError, setWidgetHotkeyError] = useState<string | null>(null);
+  const [recordingHotkey, setRecordingHotkey] = useState(false);
+  const [hotkeySaveError, setHotkeySaveError] = useState<string | null>(null);
+  const [autostartEnabled, setAutostartEnabled] = useState(false);
+  const [autostartError, setAutostartError] = useState<string | null>(null);
+
   // Phase 9 UX overhaul state
   const [openDialog, setOpenDialog] = useState<DialogId>(null);
   const [sessionHistory, setSessionHistory] = useState<SessionHistoryItem[]>([]);
@@ -163,6 +171,11 @@ function App() {
       setOnboardingActive(!done);
     });
     void invoke<boolean>("get_telemetry_enabled").then(setTelemetryEnabled);
+    void invoke<string>("get_widget_hotkey").then(setWidgetHotkey);
+    void invoke<string | null>("get_widget_hotkey_error").then(setWidgetHotkeyError);
+    void invoke<boolean>("get_autostart_enabled")
+      .then(setAutostartEnabled)
+      .catch((e) => setAutostartError(String(e)));
     void refreshProviders();
     void invoke<ModelRegistry>("get_model_registry").then((r) => {
       setRegistry(r);
@@ -386,6 +399,74 @@ function App() {
     const next = !telemetryEnabled;
     await invoke("set_telemetry_enabled", { enabled: next });
     setTelemetryEnabled(next);
+  }
+
+  // Phase 11: hotkey recording. Listens for the next keydown that includes
+  // at least one modifier and a non-modifier key, formats it as a Tauri
+  // shortcut string, and submits.
+  function startRecordingHotkey() {
+    setRecordingHotkey(true);
+    setHotkeySaveError(null);
+  }
+
+  function cancelRecordingHotkey() {
+    setRecordingHotkey(false);
+  }
+
+  useEffect(() => {
+    if (!recordingHotkey) return;
+    const handler = async (e: KeyboardEvent) => {
+      // Esc cancels.
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setRecordingHotkey(false);
+        return;
+      }
+      // Ignore lone modifier presses — wait for the actual key.
+      if (["Shift", "Control", "Alt", "Meta", "OS", "AltGraph"].includes(e.key)) {
+        return;
+      }
+      e.preventDefault();
+      const mods: string[] = [];
+      if (e.ctrlKey) mods.push("Control");
+      if (e.shiftKey) mods.push("Shift");
+      if (e.altKey) mods.push("Alt");
+      if (e.metaKey) mods.push("Meta");
+      if (mods.length === 0) {
+        setHotkeySaveError(
+          "Hotkey must include at least one modifier (Ctrl, Shift, Alt, or Meta).",
+        );
+        return;
+      }
+      const main = formatKeyForTauri(e.code, e.key);
+      if (!main) {
+        setHotkeySaveError(`Unsupported key: ${e.key}`);
+        return;
+      }
+      const combo = [...mods, main].join("+");
+      try {
+        await invoke("set_widget_hotkey", { hotkey: combo });
+        setWidgetHotkey(combo);
+        setWidgetHotkeyError(null);
+        setRecordingHotkey(false);
+        setHotkeySaveError(null);
+      } catch (err) {
+        setHotkeySaveError(String(err));
+      }
+    };
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, [recordingHotkey]);
+
+  async function toggleAutostart() {
+    const next = !autostartEnabled;
+    setAutostartError(null);
+    try {
+      await invoke("set_autostart_enabled", { enabled: next });
+      setAutostartEnabled(next);
+    } catch (e) {
+      setAutostartError(String(e));
+    }
   }
 
   async function exportSecurityPdf() {
@@ -1301,6 +1382,64 @@ function App() {
         <div className="dialog-body">
           <div className="setting-row">
             <div className="setting-text">
+              <strong>Widget hotkey</strong>
+              <p className="muted small">
+                The keyboard shortcut that summons the floating widget from
+                anywhere. Click "Change" and press the combo you want.
+                Requires at least one modifier (Ctrl, Shift, Alt, Meta).
+              </p>
+              {widgetHotkeyError && (
+                <div className="status status-error" style={{ marginTop: "0.4rem" }}>
+                  Hotkey unavailable on this machine: {widgetHotkeyError}. Use
+                  the tray icon to summon the widget, or rebind below.
+                </div>
+              )}
+              {hotkeySaveError && (
+                <div className="status status-error" style={{ marginTop: "0.4rem" }}>
+                  {hotkeySaveError}
+                </div>
+              )}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.3rem" }}>
+              <code style={{ background: "#f5f5f5", padding: "0.2rem 0.5rem", borderRadius: "4px" }}>
+                {recordingHotkey ? "Press combo…" : prettyHotkey(widgetHotkey)}
+              </code>
+              {recordingHotkey ? (
+                <button className="link" onClick={cancelRecordingHotkey}>
+                  Cancel (Esc)
+                </button>
+              ) : (
+                <button className="secondary" onClick={startRecordingHotkey}>
+                  Change
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="setting-row" style={{ marginTop: "1rem" }}>
+            <div className="setting-text">
+              <strong>Start with Windows</strong>
+              <p className="muted small">
+                Launch SQL Mate automatically when you sign in to Windows.
+                The widget stays hidden in the tray until you press the
+                hotkey, so this does not slow down login. Off by default.
+              </p>
+              {autostartError && (
+                <div className="status status-error" style={{ marginTop: "0.4rem" }}>
+                  {autostartError}
+                </div>
+              )}
+            </div>
+            <button
+              className={`toggle-chip${autostartEnabled ? " on" : ""}`}
+              onClick={() => void toggleAutostart()}
+            >
+              {autostartEnabled ? "ON" : "OFF"}
+            </button>
+          </div>
+
+          <div className="setting-row" style={{ marginTop: "1rem" }}>
+            <div className="setting-text">
               <strong>Telemetry</strong>
               <p className="muted small">
                 Off by default. If enabled, future versions of the app may
@@ -1442,6 +1581,68 @@ function ModelPicker({
       )}
     </div>
   );
+}
+
+/**
+ * Format a KeyboardEvent's key for Tauri's global-shortcut Shortcut::from_str
+ * parser. Tauri uses keyboard-code style ("KeyA", "Digit1", "F1", "Space",
+ * etc.) — we map e.code directly when possible.
+ */
+function formatKeyForTauri(code: string, key: string): string | null {
+  if (/^Key[A-Z]$/.test(code)) return code; // e.g. "KeyA"
+  if (/^Digit\d$/.test(code)) return code; // e.g. "Digit1"
+  if (/^Numpad\d$/.test(code)) return code;
+  if (/^F\d{1,2}$/.test(code)) return code; // F1..F24
+  switch (code) {
+    case "Space":
+    case "Enter":
+    case "Tab":
+    case "Escape":
+    case "Backspace":
+    case "Delete":
+    case "Insert":
+    case "Home":
+    case "End":
+    case "PageUp":
+    case "PageDown":
+    case "ArrowUp":
+    case "ArrowDown":
+    case "ArrowLeft":
+    case "ArrowRight":
+    case "Minus":
+    case "Equal":
+    case "BracketLeft":
+    case "BracketRight":
+    case "Semicolon":
+    case "Quote":
+    case "Backquote":
+    case "Backslash":
+    case "Comma":
+    case "Period":
+    case "Slash":
+      return code;
+    default:
+      // Last-ditch fallback for any printable single character.
+      if (key.length === 1) return key.toUpperCase();
+      return null;
+  }
+}
+
+/**
+ * Pretty-print a Tauri shortcut string for display
+ * ("CommandOrControl+Shift+Space" → "Ctrl + Shift + Space").
+ */
+function prettyHotkey(hotkey: string): string {
+  return hotkey
+    .split("+")
+    .map((part) => {
+      if (part === "CommandOrControl" || part === "Control") return "Ctrl";
+      if (part === "Shift" || part === "Alt" || part === "Meta") return part;
+      if (/^Key([A-Z])$/.test(part)) return part.replace("Key", "");
+      if (/^Digit(\d)$/.test(part)) return part.replace("Digit", "");
+      return part;
+    })
+    .join(" + ");
 }
 
 export default App;
