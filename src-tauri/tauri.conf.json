@@ -12,9 +12,28 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "SQL Mate",
         "width": 900,
-        "height": 700
+        "height": 700,
+        "url": "index.html",
+        "visible": true
+      },
+      {
+        "label": "widget",
+        "title": "SQL Mate widget",
+        "width": 400,
+        "height": 500,
+        "minWidth": 220,
+        "minHeight": 30,
+        "url": "widget.html",
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "visible": false,
+        "shadow": true,
+        "transparent": false
       }
     ],
     "security": {
