@@ -13,8 +13,9 @@ use crate::security_pdf;
 use crate::sidecar::{SidecarManager, ValidatedSql};
 use crate::store::{
     Annotation, ConnectionProfile, HistoryEntry, NewConnectionProfile, NewProviderConfig,
-    ProviderConfig, Redaction, Store, StoreError,
+    ProviderConfig, Redaction, Store, StoreError, WidgetState,
 };
+use tauri::{AppHandle, Manager};
 
 const SETTING_ACTIVE_PROVIDER: &str = "active_provider_id";
 const SETTING_TELEMETRY_ENABLED: &str = "telemetry_enabled";
@@ -942,4 +943,88 @@ fn format_schema_for_prompt(model: &SchemaModel) -> String {
         }
     }
     out
+}
+
+// ---------- Widget state (Phase 10 / ADR 0014) ----------
+
+#[tauri::command]
+pub async fn get_widget_state(store: State<'_, Store>) -> Result<WidgetState, String> {
+    store.get_widget_state().map_err(err)
+}
+
+#[tauri::command]
+pub async fn set_widget_position(
+    x: i32,
+    y: i32,
+    store: State<'_, Store>,
+) -> Result<(), String> {
+    store.set_widget_position(x, y).map_err(err)
+}
+
+#[tauri::command]
+pub async fn set_widget_pill_mode(
+    pill_mode: bool,
+    store: State<'_, Store>,
+) -> Result<(), String> {
+    store.set_widget_pill_mode(pill_mode).map_err(err)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetWidgetLastQueryRequest {
+    pub question: Option<String>,
+    pub sql: Option<String>,
+    pub model: Option<String>,
+    pub validation_status: Option<String>,
+    pub validation_error: Option<String>,
+}
+
+#[tauri::command]
+pub async fn set_widget_last_query(
+    req: SetWidgetLastQueryRequest,
+    store: State<'_, Store>,
+) -> Result<(), String> {
+    store
+        .set_widget_last_query(
+            req.question.as_deref(),
+            req.sql.as_deref(),
+            req.model.as_deref(),
+            req.validation_status.as_deref(),
+            req.validation_error.as_deref(),
+        )
+        .map_err(err)
+}
+
+#[tauri::command]
+pub async fn clear_widget_last_query(store: State<'_, Store>) -> Result<(), String> {
+    store.clear_widget_last_query().map_err(err)
+}
+
+#[tauri::command]
+pub async fn show_widget(app: AppHandle) -> Result<(), String> {
+    let widget = app
+        .get_webview_window("widget")
+        .ok_or_else(|| "widget window not found".to_string())?;
+    widget.show().map_err(|e| e.to_string())?;
+    widget.set_focus().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn hide_widget(app: AppHandle) -> Result<(), String> {
+    let widget = app
+        .get_webview_window("widget")
+        .ok_or_else(|| "widget window not found".to_string())?;
+    widget.hide().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn show_main_window(app: AppHandle) -> Result<(), String> {
+    let main = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    main.show().map_err(|e| e.to_string())?;
+    main.unminimize().map_err(|e| e.to_string())?;
+    main.set_focus().map_err(|e| e.to_string())?;
+    Ok(())
 }
