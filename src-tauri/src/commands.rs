@@ -1,11 +1,21 @@
+use std::time::Instant;
+
+use futures::stream::StreamExt;
 use rusqlite::params;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use sqlx::postgres::{PgConnectOptions, PgRow};
+use sqlx::{Column, ConnectOptions, Connection, Row};
 use tauri::State;
 
 use crate::extract::postgres::{self, PgConnectionParams};
 use crate::llm::anthropic;
 use crate::schema::SchemaModel;
+use crate::sidecar::{SidecarManager, ValidatedSql};
 use crate::store::{ConnectionProfile, NewConnectionProfile, Store, StoreError};
+
+const ROW_CAP: usize = 1_000;
+const QUERY_TIMEOUT_MS: u64 = 30_000;
 
 const SETTING_API_KEY: &str = "anthropic_api_key";
 
@@ -196,6 +206,185 @@ pub async fn generate_sql(
     anthropic::call_anthropic(&api_key, &schema_text, &question)
         .await
         .map_err(err)
+}
+
+// ---------- Validation ----------
+
+#[tauri::command]
+pub async fn validate_sql(
+    connection_id: String,
+    sql: String,
+    store: State<'_, Store>,
+    sidecar: State<'_, SidecarManager>,
+) -> Result<ValidatedSql, String> {
+    layer1_prevalidate(&sql).map_err(|m| m.to_string())?;
+
+    let persisted = store
+        .get_schema(&connection_id)
+        .map_err(err)?
+        .ok_or_else(|| {
+            "No schema extracted for this connection. Click \"Extract schema\" first."
+                .to_string()
+        })?;
+    let schema_value: Value = serde_json::from_str(&persisted.model_json).map_err(err)?;
+
+    sidecar
+        .validate("postgres", &sql, schema_value)
+        .await
+        .map_err(err)
+}
+
+/// Cheap Rust-side syntactic check that rejects obvious mutating queries
+/// before invoking the sidecar. Per docs/architecture/sql-validation.md.
+fn layer1_prevalidate(sql: &str) -> Result<(), &'static str> {
+    let upper = sql.to_uppercase();
+    let head = upper.trim_start();
+    if head.is_empty() {
+        return Err("query is empty");
+    }
+    let starts_with = |kw: &str| head.starts_with(kw)
+        && head.as_bytes().get(kw.len()).map_or(true, |b| !b.is_ascii_alphanumeric() && *b != b'_');
+    if !starts_with("SELECT") && !starts_with("WITH") {
+        return Err("query must start with SELECT or WITH");
+    }
+    let forbidden = [
+        "INSERT", "UPDATE", "DELETE", "DROP", "TRUNCATE", "ALTER", "CREATE",
+        "GRANT", "REVOKE", "EXECUTE", "EXEC", "CALL", "MERGE", "LOCK",
+        "RENAME", "COMMENT", "COPY", "LOAD", "IMPORT", "EXPORT", "BACKUP", "RESTORE",
+    ];
+    for token in upper.split(|c: char| !c.is_ascii_alphabetic()) {
+        if forbidden.contains(&token) {
+            return Err("query contains a forbidden mutating keyword");
+        }
+    }
+    Ok(())
+}
+
+// ---------- Execution ----------
+
+#[derive(Debug, Serialize)]
+pub struct ExecutionResult {
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<Value>>,
+    pub row_count: usize,
+    pub truncated: bool,
+    pub duration_ms: u64,
+}
+
+#[tauri::command]
+pub async fn execute_query(
+    connection_id: String,
+    sql: String,
+    store: State<'_, Store>,
+    sidecar: State<'_, SidecarManager>,
+) -> Result<ExecutionResult, String> {
+    // Re-validate before executing — defense in depth in case the UI sends a
+    // query whose validation has expired (schema re-extracted) or that was
+    // edited between validate and run.
+    layer1_prevalidate(&sql).map_err(|m| m.to_string())?;
+    let persisted = store
+        .get_schema(&connection_id)
+        .map_err(err)?
+        .ok_or_else(|| "No schema extracted for this connection.".to_string())?;
+    let schema_value: Value = serde_json::from_str(&persisted.model_json).map_err(err)?;
+    let validated = sidecar
+        .validate("postgres", &sql, schema_value)
+        .await
+        .map_err(err)?;
+
+    let profile = store
+        .get_profile(&connection_id)
+        .map_err(err)?
+        .ok_or_else(|| "connection profile not found".to_string())?;
+
+    let opts = PgConnectOptions::new()
+        .host(&profile.host)
+        .port(profile.port)
+        .database(&profile.database_name)
+        .username(&profile.username)
+        .password(&profile.password);
+
+    let mut conn = opts.connect().await.map_err(err)?;
+
+    // Defense in depth on top of the read-only DB role.
+    sqlx::query("SET default_transaction_read_only = on")
+        .execute(&mut conn)
+        .await
+        .map_err(err)?;
+    sqlx::query(&format!("SET statement_timeout = {QUERY_TIMEOUT_MS}"))
+        .execute(&mut conn)
+        .await
+        .map_err(err)?;
+
+    let start = Instant::now();
+    let mut stream = sqlx::query(&validated.sql).fetch(&mut conn);
+    let mut rows: Vec<Vec<Value>> = Vec::new();
+    let mut columns: Vec<String> = Vec::new();
+    let mut truncated = false;
+
+    while let Some(row_result) = stream.next().await {
+        if rows.len() >= ROW_CAP {
+            truncated = true;
+            break;
+        }
+        let row: PgRow = row_result.map_err(err)?;
+        if columns.is_empty() {
+            columns = row.columns().iter().map(|c| c.name().to_string()).collect();
+        }
+        let mut json_row = Vec::with_capacity(row.columns().len());
+        for i in 0..row.columns().len() {
+            json_row.push(decode_value(&row, i));
+        }
+        rows.push(json_row);
+    }
+    drop(stream);
+    let duration = start.elapsed();
+    let _ = conn.close().await;
+
+    let _ = validated; // silence unused-result warning
+
+    Ok(ExecutionResult {
+        row_count: rows.len(),
+        columns,
+        rows,
+        truncated,
+        duration_ms: duration.as_millis() as u64,
+    })
+}
+
+/// Best-effort generic decoder. Tries common Postgres types in order. For
+/// types we don't decode (e.g. timestamps without the sqlx `time` feature),
+/// falls back to a placeholder string. Phase 3 walking skeleton — Phase 5
+/// or later should harden this.
+fn decode_value(row: &PgRow, i: usize) -> Value {
+    if let Ok(v) = row.try_get::<Option<i64>, _>(i) {
+        return v.map(Value::from).unwrap_or(Value::Null);
+    }
+    if let Ok(v) = row.try_get::<Option<i32>, _>(i) {
+        return v.map(|x| Value::from(x as i64)).unwrap_or(Value::Null);
+    }
+    if let Ok(v) = row.try_get::<Option<bool>, _>(i) {
+        return v.map(Value::from).unwrap_or(Value::Null);
+    }
+    if let Ok(v) = row.try_get::<Option<f64>, _>(i) {
+        return v
+            .and_then(|x| serde_json::Number::from_f64(x).map(Value::from))
+            .unwrap_or(Value::Null);
+    }
+    if let Ok(v) = row.try_get::<Option<f32>, _>(i) {
+        return v
+            .and_then(|x| serde_json::Number::from_f64(x as f64).map(Value::from))
+            .unwrap_or(Value::Null);
+    }
+    if let Ok(v) = row.try_get::<Option<String>, _>(i) {
+        return v.map(Value::from).unwrap_or(Value::Null);
+    }
+    let type_name = row
+        .columns()
+        .get(i)
+        .map(|c| c.type_info().to_string())
+        .unwrap_or_else(|| "?".into());
+    Value::String(format!("<unsupported type: {type_name}>"))
 }
 
 fn format_schema_for_prompt(model: &SchemaModel) -> String {

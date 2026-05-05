@@ -9,7 +9,7 @@ export type ConnectionProfile = {
   port: number;
   database_name: string;
   username: string;
-  keychain_ref: string;
+  // password is on the Rust side (#[serde(skip_serializing)]); never reaches the frontend.
   created_at: number;
   last_used_at: number | null;
 };
@@ -49,4 +49,17 @@ export type ForeignKey = {
   references_schema: string;
   references_table: string;
   references_columns: string[];
+};
+
+export type ValidatedSql = {
+  sql: string;
+  referenced_tables: string[];
+};
+
+export type ExecutionResult = {
+  columns: string[];
+  rows: unknown[][];
+  row_count: number;
+  truncated: boolean;
+  duration_ms: number;
 };

@@ -1,7 +1,18 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
-import type { ConnectionProfile, SchemaModel } from "./types";
+import type {
+  ConnectionProfile,
+  ExecutionResult,
+  SchemaModel,
+  ValidatedSql,
+} from "./types";
+
+type Validation =
+  | { state: "idle" }
+  | { state: "running" }
+  | { state: "ok"; referenced: string[] }
+  | { state: "error"; message: string };
 
 type NewProfileForm = {
   name: string;
@@ -47,6 +58,14 @@ function App() {
   const [generating, setGenerating] = useState(false);
   const [generatedSql, setGeneratedSql] = useState<string | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
+
+  // Validation
+  const [validation, setValidation] = useState<Validation>({ state: "idle" });
+
+  // Execution
+  const [executing, setExecuting] = useState(false);
+  const [executeError, setExecuteError] = useState<string | null>(null);
+  const [results, setResults] = useState<ExecutionResult | null>(null);
 
   useEffect(() => {
     void invoke<boolean>("has_api_key").then(setApiKeySaved).catch(() => setApiKeySaved(false));
@@ -170,16 +189,52 @@ function App() {
     setGenerating(true);
     setGeneratedSql(null);
     setGenerateError(null);
+    setValidation({ state: "idle" });
+    setResults(null);
+    setExecuteError(null);
     try {
       const sql = await invoke<string>("generate_sql", {
         connectionId: selectedId,
         question,
       });
       setGeneratedSql(sql);
+      void validate(sql);
     } catch (e) {
       setGenerateError(String(e));
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function validate(sql: string) {
+    if (!selectedId) return;
+    setValidation({ state: "running" });
+    try {
+      const v = await invoke<ValidatedSql>("validate_sql", {
+        connectionId: selectedId,
+        sql,
+      });
+      setValidation({ state: "ok", referenced: v.referenced_tables });
+    } catch (e) {
+      setValidation({ state: "error", message: String(e) });
+    }
+  }
+
+  async function runQuery() {
+    if (!selectedId || !generatedSql) return;
+    setExecuting(true);
+    setExecuteError(null);
+    setResults(null);
+    try {
+      const r = await invoke<ExecutionResult>("execute_query", {
+        connectionId: selectedId,
+        sql: generatedSql,
+      });
+      setResults(r);
+    } catch (e) {
+      setExecuteError(String(e));
+    } finally {
+      setExecuting(false);
     }
   }
 
@@ -445,15 +500,83 @@ function App() {
           </form>
           {generateError && <div className="status status-error">{generateError}</div>}
           {generatedSql && (
-            <div className="output">
-              <div className="output-label">Generated SQL</div>
-              <pre>{generatedSql}</pre>
-            </div>
+            <>
+              <div className="output">
+                <div className="output-label">Generated SQL</div>
+                <pre>{generatedSql}</pre>
+              </div>
+
+              {validation.state === "running" && (
+                <div className="status">Validating with sqlglot…</div>
+              )}
+              {validation.state === "error" && (
+                <div className="status status-error">
+                  Validation failed: {validation.message}
+                </div>
+              )}
+              {validation.state === "ok" && (
+                <div className="status status-ok">
+                  Validation passed. References:{" "}
+                  {validation.referenced.length === 0
+                    ? "(none)"
+                    : validation.referenced.join(", ")}
+                </div>
+              )}
+
+              {validation.state === "ok" && (
+                <div className="row" style={{ marginTop: "0.5rem" }}>
+                  <button onClick={runQuery} disabled={executing}>
+                    {executing ? "Running…" : "Run query"}
+                  </button>
+                  <span className="muted small">
+                    Read-only transaction · cap {1000} rows · 30s timeout
+                  </span>
+                </div>
+              )}
+
+              {executeError && <div className="status status-error">{executeError}</div>}
+
+              {results && (
+                <div className="results">
+                  <div className="results-meta muted small">
+                    {results.row_count} row{results.row_count === 1 ? "" : "s"}
+                    {results.truncated && " (truncated)"} · {results.duration_ms} ms
+                  </div>
+                  <div className="results-table-wrap">
+                    <table className="results-table">
+                      <thead>
+                        <tr>
+                          {results.columns.map((c) => (
+                            <th key={c}>{c}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {results.rows.map((r, i) => (
+                          <tr key={i}>
+                            {r.map((cell, j) => (
+                              <td key={j}>{cellRender(cell)}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </section>
       )}
     </main>
   );
+}
+
+function cellRender(value: unknown): string {
+  if (value === null || value === undefined) return "NULL";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return JSON.stringify(value);
 }
 
 export default App;

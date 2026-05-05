@@ -219,6 +219,37 @@ button.link-danger:hover { color: #b91c1c; background: transparent; }
   word-break: break-word;
 }
 
+.results { margin-top: 0.75rem; }
+.results-meta { margin-bottom: 0.4rem; }
+.results-table-wrap {
+  border: 1px solid #d4d4d4;
+  border-radius: 6px;
+  overflow: auto;
+  max-height: 500px;
+  background: #ffffff;
+}
+.results-table {
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  width: 100%;
+}
+.results-table th, .results-table td {
+  border-bottom: 1px solid #f0f0f0;
+  padding: 0.35rem 0.6rem;
+  text-align: left;
+  white-space: nowrap;
+  vertical-align: top;
+}
+.results-table th {
+  position: sticky;
+  top: 0;
+  background: #f5f5f5;
+  font-weight: 600;
+  border-bottom: 1px solid #d4d4d4;
+}
+.results-table tbody tr:hover { background: #fafafa; }
+
 @media (prefers-color-scheme: dark) {
   :root { color: #f6f6f6; background-color: #1a1a1a; }
   .subtitle, .muted { color: #a3a3a3; }
