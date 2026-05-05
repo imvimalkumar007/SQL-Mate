@@ -1,126 +1,129 @@
 # Widget design spec
 
-The load-bearing constraints for the floating widget shipped under
-ADR 0014. The visual reference is
-`docs/design/widget-prototype.html`. Where the prototype and this
-spec disagree, this spec wins. The prototype is aesthetic guidance,
-not a feature list.
+This document is the source of truth for the widget's visual and
+interaction design. Any UI change to the widget must update this
+file and the prototype together.
 
-This is a stub. It captures the rules a future implementation phase
-must respect; it does not yet specify pixel-level layout, component
-hierarchy, or React structure. Those land in the implementation
-phase's kickoff doc.
+The reference prototype is at `docs/design/widget-prototype.html`.
 
-## Out of scope (must not appear in the widget)
+## Dimensions
 
-These are non-negotiable. They override anything in the prototype.
+- Expanded widget: 400px wide × ~500px tall (height grows with
+  SQL output up to a max, then code block scrolls internally)
+- Minimum widget height: 280px (empty state)
+- Pill: 220px × 30px
+- Border radius: 10px on the widget, 999px on the pill
+- Drop shadow: 0 16px 40px rgba(0, 0, 0, 0.45)
 
-1. **No execution affordances.** No "Run" button, no "Run in Console"
-   button, no "Execute" command, no inline result preview, no row
-   table. Per ADR 0014's reaffirmation of SECURITY_MODEL.md T2 and
-   the Phase 9 removal documented in
-   `docs/architecture/query-execution.md`, the app does not run
-   generated SQL. The widget produces validated SQL and exposes a
-   click-to-copy affordance only.
-2. **No screen reading, no keystroke capture, no overlay sensing.**
-   The widget is a window. It only reads its own input box. The
-   security review pack must be able to confirm this by inspecting
-   the Tauri capabilities manifest.
-3. **No telemetry payload.** The Phase 9 telemetry-opt-in toggle
-   continues to ship in the main window's settings; the widget
-   does not surface it and does not send anything regardless of
-   the toggle state.
-4. **No feedback collection.** Thumbs-up / thumbs-down buttons in
-   the prototype's footer are aesthetic placeholders only.
-5. **No "Snippets" feature.** Not in the product.
+## Color tokens
 
-## Load-bearing widget behavior
+These are the only colors used in the widget. Define as CSS
+custom properties; do not introduce others without updating this
+spec.
 
-These come straight from the ADR. The implementation must hit all
-of them.
+| Token | Value | Used for |
+|---|---|---|
+| --bg | #131313 | App background |
+| --surface | #1b1b1c | Widget header / footer background |
+| --surface-2 | #202020 | Widget body background |
+| --surface-3 | #2a2a2a | Pill background, hover states |
+| --border | #424754 | Primary border |
+| --border-soft | #303035 | Internal dividers |
+| --text | #e5e2e1 | Primary text |
+| --text-muted | #c2c6d6 | Secondary text |
+| --text-dim | #8c909f | Tertiary / placeholder text |
+| --primary | #adc6ff | Status dot, primary button, model name |
+| --primary-fg | #002e6a | Foreground on primary button |
+| --code-bg | #0e0e0e | SQL output background |
+| --kw | #adc6ff | SQL keywords |
+| --fn | #ffb786 | SQL function names |
+| --str | #a4c9ff | SQL string literals |
+| --danger | #ffb4ab | Error text |
+| --danger-bg | #93000a | Error backgrounds (with low alpha) |
 
-| Property | Value |
-|---|---|
-| Frame | Frameless (no titlebar, no border chrome) |
-| Z-order | Always-on-top |
-| Taskbar | No taskbar entry |
-| Default size (expanded) | ~400 px wide × ~500 px tall |
-| Default size (pill) | ~220 px wide × ~30 px tall |
-| Summon hotkey (default) | `Ctrl+Shift+Space` |
-| Hotkey rebindable | Yes, in main-window settings |
-| Persistence on close | Last position, last question text, and last generated SQL are restored on next summon |
-| System tray icon | Yes — shows app status + menu (Show widget · Open main window · Settings · Quit) |
-| Status states | `ready` · `no schema` · `no provider` · `error` |
-| Pill alternative | Always available; user picks pill vs tray icon (or both) in settings |
-| Drag | Pill draggable; expanded widget draggable from a top "grip" region |
-| Multi-monitor | Position remembered per monitor; falls back to primary if last monitor is gone |
+## Typography
 
-## Widget content (when expanded)
+- UI font: Inter, system fallback
+- Monospace font: JetBrains Mono, system monospace fallback
+- Field labels: 10px, uppercase, letter-spacing 0.1em, weight 500
+- Body text: 13px, weight 400
+- Code: 12px JetBrains Mono, line-height 1.55
+- Connection/model context label: 11px JetBrains Mono
+- Footer telemetry: 10px JetBrains Mono
 
-In rough order top-to-bottom:
+## Layout (top to bottom)
 
-1. **Compact header.** Title + close (collapses to pill / tray) +
-   "open main window" link. Optional drag-handle region.
-2. **Active context line.** "Connection: <name> · Model: <name>"
-   in muted small type, click to open the relevant main-window
-   modal (no duplicate provider/connection editing inside the
-   widget).
-3. **Question input.** Multi-line textarea, autofocused on summon,
-   submit on Cmd/Ctrl+Enter.
-4. **Generate button.** Primary action. Disabled if no provider
-   or no schema.
-5. **Generated SQL block.** Same `SqlBlock` component as the main
-   window — syntax-highlighted, copy button, validation status.
-6. **Validation status.** Pass/fail line, no expanded request log
-   in the widget (request log lives in the main window).
-7. **Recent.** Last 3 session-history entries inline, scrollable.
-   Full session history lives in the main window.
+1. **Header** (32px tall) — drag region. Status dot, context
+   label (`connection_name · Model Name`), three icon buttons
+   (minimize-to-pill, settings, hide-to-tray).
+2. **Body** (variable) — padded 12px on all sides.
+   - Field label "Ask"
+   - Question textarea (min 64px, grows to ~120px max)
+   - Action row: schema pill (left) + Generate button (right)
+   - Output section: "SQL" label + Copy button on right
+   - Code block (or empty/error/streaming state)
+3. **Footer** (28px tall) — status text on left, hotkey hint or
+   secondary info on right.
 
-## What the widget delegates to the main window
+## States
 
-The widget is for the hot path: ask → SQL → copy. Everything else
-is in the main window:
+Six distinct states, all rendered in the prototype:
 
-- Provider configuration (add / remove / edit API keys)
-- Connection profiles (add / remove / edit)
-- Schema extraction
-- Schema review and redaction
-- Annotation editing
-- Settings (telemetry, hotkey rebinding)
-- Security review pack export
-- Full session and persisted history
+1. **Default** — schema loaded, no question yet. Empty textarea
+   with placeholder, code block shows "SQL appears here after
+   you generate." Status dot pulses primary blue.
+2. **Streaming** — question submitted, SQL appearing token by
+   token. Generate button replaced with spinning indicator and
+   "Generating" label, becomes disabled. Code block has a
+   blinking cursor at the streaming position. Footer reads
+   "streaming · esc to cancel."
+3. **Generated** — SQL complete and validated. Copy button
+   active. Footer shows latency, token count, and a green
+   "validated" stat.
+4. **Validation error** — SQL generated but rejected. Status
+   dot turns danger red (no animation). Inline error banner
+   above the (greyed-out) code block explains why. Generate
+   button label becomes "Try again." Footer reads "rejected."
+5. **Empty / no schema** — first run or no schema loaded. Body
+   replaced with centered empty state: schema icon, "No schema
+   loaded" title, one-line description, "Open settings →" link.
+   Status dot is text-dim color, no animation. Header context
+   label reads "no schema loaded" in dim text.
+6. **Pill (collapsed)** — the entire widget collapses to a 220×30
+   pill showing status dot, connection name, model name, and a
+   chevron. Click to expand back to the widget.
 
-Clicking provider or connection in the widget's active-context line
-opens the relevant modal in the main window, which gets focus.
+## Interaction details
 
-## Visual language (from the prototype)
+- The textarea autofocuses when the widget appears (whether by
+  hotkey or click).
+- Cmd/Ctrl+Enter submits the question.
+- Esc dismisses the widget back to tray (or pill, depending on
+  user preference).
+- Cmd/Ctrl+C with focus in the code block copies the SQL.
+- The header is a drag region — clicking and dragging anywhere
+  in the header moves the widget. Position persists across
+  sessions.
+- The pill is also fully draggable.
+- Hover states use `--surface-3` background on icon buttons.
+- The status dot pulses in default and generated states, holds
+  steady (no animation) in error and empty states.
 
-- **Color palette:** Material 3 dark theme. Primary `#adc6ff`
-  (cool blue), surface `#131313`, surface-container `#202020`,
-  outline-variant `#424754`, code background `#121212`.
-- **Typography:** Inter 400/500/600/700 for UI text; JetBrains
-  Mono for code. Headline 1.25 rem / 600, body 0.875 rem / 400,
-  label 0.75 rem / 500, code 0.8125 rem.
-- **Spacing scale:** xs 0.25 rem · sm 0.5 rem · md 1 rem ·
-  lg 1.5 rem · xl 2 rem.
-- **Border radius:** default 0.125 rem, lg 0.25 rem, xl 0.5 rem.
-- **SQL syntax highlighting tokens:** keyword `#adc6ff`, function
-  `#ffb786`, string `#a4c9ff`. (Maps onto the existing `SqlBlock`
-  component's token classes; the implementation phase decides
-  whether to keep the existing token names or rename to match.)
+## Hard constraints
 
-## Things explicitly punted to the implementation phase
+- No transparency, no blur effects, no gradients. Solid surfaces
+  only. (A future polish iteration may revisit transparency once
+  core flows are stable.)
+- No animation longer than 200ms except the status-dot pulse and
+  the streaming cursor blink.
+- No font weights between 400 and 500. Two weights only.
+- No font sizes below 10px.
+- The widget must remain usable at the documented dimensions
+  without horizontal scroll on any element except the code block.
 
-- React structure: separate widget app vs subset of the main app's
-  bundle.
-- Tauri configuration: separate window definition vs single window
-  with multiple roles.
-- Hotkey registration: which crate or Tauri plugin.
-- Tray icon platform integration: Tauri's built-in tray API vs a
-  plugin.
-- Pixel-level component layout and animations.
-- How to handle the Phase 9 onboarding wizard from the widget
-  (probably: widget refuses to be useful until the main window's
-  onboarding is complete; widget surfaces a "complete setup" link).
-- macOS / Linux: explicitly out of scope; reopen this spec when
-  cross-platform work is unblocked.
+## Reference prototype
+
+Open `docs/design/widget-prototype.html` in a browser. All six
+states are rendered there at actual size. When making any UI
+change, update both this spec and the prototype together so they
+remain consistent.
