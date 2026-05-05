@@ -23,7 +23,11 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["msi", "nsis", "deb", "appimage", "dmg"],
+    "publisher": "SQL Mate",
+    "category": "DeveloperTool",
+    "shortDescription": "Local-first natural-language SQL for your databases.",
+    "longDescription": "SQL Mate turns natural-language questions into read-only SQL queries against your database. Row data never leaves your machine. Bring your own LLM key.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
