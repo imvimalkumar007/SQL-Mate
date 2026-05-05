@@ -2,8 +2,10 @@ mod commands;
 mod extract;
 mod llm;
 mod schema;
+mod sidecar;
 mod store;
 
+use sidecar::SidecarManager;
 use store::Store;
 use tauri::Manager;
 
@@ -15,6 +17,23 @@ pub fn run() {
             let db_path = data_dir.join("sql-mate").join("store.db");
             let store = Store::open(&db_path)?;
             app.manage(store);
+
+            // Spawn the Python sidecar. If startup fails (Python missing,
+            // sqlglot not installed, handshake timeout), we surface the
+            // error and refuse to launch — validation is load-bearing per
+            // SECURITY_MODEL.md, so an app without a working validator is
+            // not safe to use.
+            let handle = app.handle().clone();
+            tauri::async_runtime::block_on(async move {
+                match SidecarManager::spawn().await {
+                    Ok(mgr) => {
+                        handle.manage(mgr);
+                        Ok(())
+                    }
+                    Err(e) => Err(Box::<dyn std::error::Error>::from(e.to_string())),
+                }
+            })?;
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
