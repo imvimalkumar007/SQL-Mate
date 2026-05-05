@@ -19,7 +19,11 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
-pub const DEFAULT_WIDGET_HOTKEY: &str = "CommandOrControl+Shift+Space";
+// Windows-only per ADR 0014. Use "Ctrl" rather than "CommandOrControl"
+// because the latter is a legacy alias that tauri-plugin-global-shortcut's
+// FromStr parser does not always accept across versions; "Ctrl" parses
+// reliably.
+pub const DEFAULT_WIDGET_HOTKEY: &str = "Ctrl+Shift+Space";
 pub const SETTING_WIDGET_HOTKEY: &str = "widget_hotkey";
 pub const SETTING_WIDGET_HOTKEY_ERROR: &str = "widget_hotkey_error";
 
@@ -92,17 +96,34 @@ pub fn run() {
 
             // Phase 11: load the hotkey from settings (or use the default),
             // register it, and persist any error to settings so the
-            // main-window settings UI can surface it.
+            // main-window settings UI can surface it. If a previously-saved
+            // hotkey fails to parse or register (this happened during Phase
+            // 11 development with the "CommandOrControl" alias), fall back
+            // to the hardcoded default so the user has a working hotkey
+            // without having to rebind by hand.
             let store_state: tauri::State<Store> = app.state();
             let configured_hotkey = read_setting(&store_state, SETTING_WIDGET_HOTKEY)
                 .unwrap_or_else(|| DEFAULT_WIDGET_HOTKEY.to_string());
-            match register_hotkey(app.handle(), &configured_hotkey) {
+            let registered = register_hotkey(app.handle(), &configured_hotkey)
+                .or_else(|e1| {
+                    eprintln!(
+                        "configured hotkey {configured_hotkey:?} could not be registered: {e1}. \
+                         Falling back to default {DEFAULT_WIDGET_HOTKEY:?}."
+                    );
+                    register_hotkey(app.handle(), DEFAULT_WIDGET_HOTKEY).map_err(|e2| {
+                        format!(
+                            "configured: {e1}; default {DEFAULT_WIDGET_HOTKEY:?}: {e2}"
+                        )
+                    })
+                });
+            match registered {
                 Ok(()) => {
                     let _ = clear_setting(&store_state, SETTING_WIDGET_HOTKEY_ERROR);
+                    println!("widget hotkey registered: press it to summon the widget");
                 }
                 Err(e) => {
                     eprintln!(
-                        "global hotkey {configured_hotkey} could not be registered: {e}. \
+                        "global hotkey could not be registered: {e}. \
                          Use the tray icon to summon the widget; rebind in Settings → Widget."
                     );
                     let _ = write_setting(&store_state, SETTING_WIDGET_HOTKEY_ERROR, &e);
