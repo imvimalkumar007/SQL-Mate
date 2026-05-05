@@ -16,7 +16,7 @@ use sidecar::SidecarManager;
 use store::Store;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 pub const DEFAULT_WIDGET_HOTKEY: &str = "CommandOrControl+Shift+Space";
@@ -109,18 +109,12 @@ pub fn run() {
                 }
             }
 
-            // Hide the widget when the user clicks elsewhere — matches the
-            // raycast/spotlight pattern.
-            if let Some(widget) = app.get_webview_window("widget") {
-                let handle = app.handle().clone();
-                widget.on_window_event(move |event| {
-                    if let WindowEvent::Focused(false) = event {
-                        if let Some(w) = handle.get_webview_window("widget") {
-                            let _ = w.hide();
-                        }
-                    }
-                });
-            }
+            // Note: Phase 11 user feedback removed the auto-hide-on-focus-loss
+            // behavior. Starting a drag on Windows briefly transfers focus
+            // to the OS window manager, which fired the handler before the
+            // user could complete the drag — the widget vanished mid-grab.
+            // The widget now stays visible until explicitly dismissed (Esc,
+            // the close button, or clicking the tray icon).
 
             // Spawn the Python sidecar. If startup fails (Python missing,
             // sqlglot not installed, handshake timeout), we surface the
