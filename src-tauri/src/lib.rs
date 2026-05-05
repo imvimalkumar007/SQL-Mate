@@ -5,6 +5,7 @@ mod redact;
 mod request_log;
 mod retrieve;
 mod schema;
+mod security_pdf;
 mod sidecar;
 mod store;
 
@@ -70,6 +71,11 @@ pub fn run() {
             commands::clear_redaction,
             commands::list_redactions,
             commands::get_last_request_log,
+            commands::get_telemetry_enabled,
+            commands::set_telemetry_enabled,
+            commands::get_onboarding_completed,
+            commands::mark_onboarding_completed,
+            commands::export_security_pdf,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
