@@ -5,9 +5,11 @@ mod profiles;
 mod providers;
 pub mod redactions;
 mod schemas;
+pub mod widget_state;
 
 pub use connection::{Store, StoreError};
 pub use history::HistoryEntry;
 pub use profiles::{ConnectionProfile, NewConnectionProfile};
 pub use providers::{NewProviderConfig, ProviderConfig};
 pub use redactions::{Annotation, Redaction};
+pub use widget_state::WidgetState;
