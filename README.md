@@ -1,4 +1,4 @@
-# SQL Mate — local-first natural language to SQL
+# SQL Mate: local-first natural language to SQL
 
 A desktop application that lets data professionals ask questions of their database in plain English and get back SQL queries — without ever exposing row data to an LLM or to our infrastructure.
 
@@ -59,4 +59,4 @@ sql-mate/
 - **Local storage**: SQLCipher-encrypted SQLite for schema cache, query history, and secrets. OS keychain integration deferred to Phase 7 — see [ADR 0008](docs/decisions/0008-no-keychain-in-phase-2.md).
 
 Licence
-Private — all rights reserved.
+Private: all rights reserved.
