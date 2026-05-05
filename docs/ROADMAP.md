@@ -80,7 +80,7 @@ This phase is split into 9a (in-app, shipped) and 9b (real-world signing infrast
 
 - **9b — blocked on real-world resources:** macOS notarization (Apple Developer Program account, Mac builder); Windows Authenticode (code-signing cert from a CA); Linux deb GPG signing; distribution channels (Homebrew, winget, apt repo). See `docs/PHASE_9B_DEFERRED.md` for the named revisit conditions.
 
-## Phase 10 — Windows widget mode (current)
+## Phase 10 — Windows widget mode
 
 Floating widget as the primary UI on Windows, summoned by a global hotkey, backed by a system tray icon. Implements ADR 0014. The existing main window stays as the admin surface (settings, schema review, redaction, history); the widget is for the hot path (ask → SQL → copy).
 
@@ -90,11 +90,18 @@ Streaming SQL output is explicitly out of scope for Phase 10 — the "Streaming"
 
 See `docs/PHASE_10_KICKOFF.md` for the full kickoff doc.
 
-## Phase 11 — Widget polish
+## Phase 11 — Widget polish (current)
 
-Multi-monitor position memory, hotkey customization UI, auto-start on Windows boot, and any other widget polish that surfaces from real use of Phase 10. Each item is listed in `docs/PHASE_10_KICKOFF.md` under "What this phase does not deliver" — Phase 11 is where they land.
+Multi-monitor position memory, hotkey customization UI, auto-start on Windows boot, and surfacing hotkey-conflict errors. The three items called out as Phase 11 in `PHASE_10_KICKOFF.md`.
 
-**Done when:** the rough edges from Phase 10 (single-monitor only, hardcoded hotkey, no auto-start) are addressed and the widget feels native on Windows — opens after reboot, restores to the right monitor, doesn't conflict with other apps' hotkeys.
+**Done when:** the rough edges from Phase 10 are addressed and the widget feels native on Windows — opens after reboot, restores to the right monitor, doesn't conflict with other apps' hotkeys (and tells you when it does).
+
+What ships:
+
+- **Hotkey customization.** Settings → Widget hotkey shows the current binding and a "Change" button. Click → press a combo with at least one modifier → the new hotkey is registered (or the registration failure is surfaced inline). Stored as a `widget_hotkey` row in the `settings` table; default `CommandOrControl+Shift+Space` if unset.
+- **Hotkey-conflict error surfaced in the UI.** If startup-time registration fails (another app already owns the combo), `widget_hotkey_error` is written to settings and the Settings dialog shows a banner pointing the user to rebind.
+- **Multi-monitor position safety.** When the widget is summoned (hotkey, tray click, or `show_widget` command), `ensure_widget_on_visible_monitor` checks whether any part of the widget overlaps a connected monitor. If not (the user disconnected the monitor it was on), the widget is centered on the primary monitor before being shown. No-op if already on a visible monitor — your saved position is respected when it's still valid.
+- **Auto-start on Windows boot.** `tauri-plugin-autostart` ships behind a Settings → "Start with Windows" toggle. Off by default. The widget stays hidden in the tray on launch; only the hotkey or tray click brings it forward, so auto-start does not slow login.
 
 ## Phase 12 — First five users
 

@@ -1,17 +1,18 @@
 // Phase 10 / ADR 0014: floating widget on Windows.
+// Phase 11 polish: realigned to docs/design/widget-prototype.html.
 //
 // Six states from docs/design/widget-design-spec.md:
 //   1. default            — schema loaded, no question yet
-//   2. streaming          — implemented as a single spinner (Phase 10
-//                            does not stream tokens; see PHASE_10_KICKOFF.md)
+//   2. generating         — single spinner (no token streaming, see
+//                            PHASE_10_KICKOFF.md)
 //   3. generated          — SQL complete + validated
 //   4. validation_error   — sqlglot rejected the SQL
 //   5. empty_no_schema    — first run or no extracted schema
 //   6. pill               — separate render path (window resized to 220×30)
 //
-// The widget is read-only on configuration — adding providers, editing
-// connections, redaction, and history all live in the main window.
-// Clicking the connection / model context label opens the main window.
+// Widget is read-only on configuration — adding providers, editing
+// connections, redaction, and history all live in the main window. Header
+// "settings" icon click opens it.
 
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -20,6 +21,18 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/window";
 import "./widget.css";
 import { tokenize } from "./SqlBlock";
+import {
+  IconCheckCircle,
+  IconClose,
+  IconCopy,
+  IconError,
+  IconExpandLess,
+  IconProgress,
+  IconRemove,
+  IconSchema,
+  IconSettings,
+  IconSpeed,
+} from "./widget-icons";
 import type {
   ConnectionProfile,
   GenerationResult,
@@ -57,7 +70,7 @@ export function Widget() {
   const [profile, setProfile] = useState<ConnectionProfile | null>(null);
   const [provider, setProvider] = useState<ProviderConfig | null>(null);
   const [registry, setRegistry] = useState<ModelRegistry | null>(null);
-  const [schemaPresent, setSchemaPresent] = useState(false);
+  const [schema, setSchema] = useState<SchemaModel | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Initial load + restore.
@@ -74,7 +87,6 @@ export function Widget() {
           // Ignore — position restoration is best-effort across monitor changes.
         }
       }
-      // Restore window size to whichever mode persisted.
       await applyWindowSize(persisted.pill_mode);
 
       const reg = await invoke<ModelRegistry>("get_model_registry");
@@ -88,11 +100,11 @@ export function Widget() {
       setProvider(activeProvider);
 
       if (active) {
-        const schema = await invoke<SchemaModel | null>("get_persisted_schema", {
+        const fresh = await invoke<SchemaModel | null>("get_persisted_schema", {
           connectionId: active.id,
         });
-        setSchemaPresent(schema !== null);
-        if (!schema) {
+        setSchema(fresh);
+        if (!fresh) {
           setState({ kind: "empty_no_schema" });
         } else if (persisted.last_question && persisted.last_sql) {
           setQuestion(persisted.last_question);
@@ -163,7 +175,7 @@ export function Widget() {
     return () => unlisten?.();
   }, []);
 
-  // Esc to dismiss back to tray (or pill if user prefers it).
+  // Esc to dismiss back to tray.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -228,11 +240,13 @@ export function Widget() {
           referenced: v.referenced_tables,
         });
         await invoke("set_widget_last_query", {
-          question,
-          sql: result.sql,
-          model: result.model,
-          validationStatus: "valid",
-          validationError: null,
+          req: {
+            question,
+            sql: result.sql,
+            model: result.model,
+            validation_status: "valid",
+            validation_error: null,
+          },
         });
       } catch (e) {
         const message = String(e);
@@ -243,11 +257,13 @@ export function Widget() {
           message,
         });
         await invoke("set_widget_last_query", {
-          question,
-          sql: result.sql,
-          model: result.model,
-          validationStatus: "invalid",
-          validationError: message,
+          req: {
+            question,
+            sql: result.sql,
+            model: result.model,
+            validation_status: "invalid",
+            validation_error: message,
+          },
         });
       }
     } catch (e) {
@@ -260,103 +276,120 @@ export function Widget() {
     }
   }
 
-  function newQuestion() {
-    setQuestion("");
-    setState({ kind: "default" });
-    void invoke("clear_widget_last_query");
-    if (textareaRef.current) textareaRef.current.focus();
-  }
+  // ---- derived display values (used by both pill and expanded) ----
 
-  // Pill render path
-  if (pillMode) {
-    const status: "ready" | "no-schema" | "error" = !profile
-      ? "no-schema"
-      : !schemaPresent
-        ? "no-schema"
-        : state.kind === "validation_error"
-          ? "error"
-          : "ready";
-    const dotClass =
-      status === "error" ? "danger" : status === "no-schema" ? "dim" : "pulse";
-    const modelName = registry && provider
-      ? registry.providers
-          .find((p) => p.kind === provider.kind)
-          ?.models.find((m) => m.id === provider.model)?.name ?? provider.model
-      : "";
-    return (
-      <div className="pill" onDoubleClick={() => void expandFromPill()}>
-        <div className="pill-text">
-          <span className={`status-dot ${dotClass}`} />
-          <span>{profile?.name ?? "no connection"}</span>
-          {modelName && <span style={{ opacity: 0.7 }}>· {modelName}</span>}
-        </div>
-        <button className="pill-chevron icon-btn" onClick={() => void expandFromPill()}>
-          ▴
-        </button>
-      </div>
-    );
-  }
-
-  // Expanded widget render path
-
+  const tableCount = schema
+    ? schema.schemas.reduce(
+        (acc, s) => acc + s.tables.filter((t) => !t.excluded).length,
+        0,
+      )
+    : 0;
+  const firstSchemaName = schema?.schemas[0]?.name ?? "";
   const modelDisplay = registry && provider
     ? registry.providers
         .find((p) => p.kind === provider.kind)
         ?.models.find((m) => m.id === provider.model)?.name ?? provider.model
     : "";
 
+  // ---- pill render ----
+
+  if (pillMode) {
+    const dotClass =
+      !profile || !schema
+        ? "dim"
+        : state.kind === "validation_error"
+          ? "danger"
+          : "pulse";
+    return (
+      <div className="pill" onDoubleClick={() => void expandFromPill()}>
+        <span className={`status-dot ${dotClass}`} />
+        <span>{profile?.name ?? "no connection"}</span>
+        {modelDisplay && (
+          <>
+            <span className="sep">·</span>
+            <span className="model">{modelDisplay}</span>
+          </>
+        )}
+        <span className="pill-spacer" />
+        <IconExpandLess
+          className="pill-chevron"
+          style={{ cursor: "pointer" }}
+        />
+      </div>
+    );
+  }
+
+  // ---- expanded render ----
+
   const noSchema = state.kind === "empty_no_schema";
-  const dotClass = noSchema
-    ? "dim"
-    : state.kind === "validation_error"
-      ? "danger"
-      : "pulse";
+  const isErrorState = state.kind === "validation_error";
+  const dotClass = noSchema ? "dim" : isErrorState ? "danger" : "pulse";
 
   return (
-    <div className="widget">
+    <div className={`widget${isErrorState ? " error-state" : ""}`}>
       <div className="widget-header">
-        <div className="widget-status-row">
+        <div className="widget-header-left">
           <span className={`status-dot ${dotClass}`} />
-          <span className={`widget-context ${noSchema ? "dim" : ""}`}>
-            {profile && schemaPresent
-              ? `${profile.name} · ${modelDisplay}`
-              : "no schema loaded"}
-          </span>
+          {noSchema ? (
+            <span className="context-label dim">no schema loaded</span>
+          ) : (
+            <span className="context-label">
+              {profile?.name ?? "no connection"}
+              {modelDisplay && (
+                <>
+                  <span className="sep">·</span>
+                  <span className="model">{modelDisplay}</span>
+                </>
+              )}
+            </span>
+          )}
         </div>
-        <div className="widget-icons">
+        <div className="widget-header-right">
           <button
             className="icon-btn"
-            title="Collapse to pill"
+            title="Minimize to pill"
             onClick={() => void collapseToPill()}
           >
-            ─
+            <IconRemove />
           </button>
           <button
             className="icon-btn"
             title="Open main window"
             onClick={() => void openMainWindow()}
           >
-            ⚙
+            <IconSettings />
           </button>
           <button
             className="icon-btn"
             title="Hide to tray"
             onClick={() => void hideToTray()}
           >
-            ✕
+            <IconClose />
           </button>
         </div>
       </div>
 
       {noSchema ? (
-        <EmptyNoSchema onOpenSettings={() => void openMainWindow()} />
+        <div className="widget-body">
+          <div className="empty-state">
+            <IconSchema className="empty-state-icon" />
+            <div className="empty-state-title">No schema loaded</div>
+            <div className="empty-state-desc">
+              Connect a database and extract its schema in the main window
+              before asking questions here.
+            </div>
+            <button className="empty-state-link" onClick={() => void openMainWindow()}>
+              Open settings →
+            </button>
+          </div>
+        </div>
       ) : (
         <div className="widget-body">
-          <span className="field-label">Ask</span>
+          <label className="field-label">Ask</label>
           <textarea
             ref={textareaRef}
-            className="widget-textarea"
-            placeholder="Describe the query you want…"
+            className="question-input"
+            placeholder="Ask about your schema…"
             value={question}
             disabled={state.kind === "generating"}
             onChange={(e) => setQuestion(e.currentTarget.value)}
@@ -367,13 +400,15 @@ export function Widget() {
               }
             }}
           />
-          <div className="widget-action-row">
+
+          <div className="action-row">
             <span className="schema-pill">
-              {profile?.dialect ?? ""}
-              {profile?.database_name ? ` · ${profile.database_name}` : ""}
+              <IconSchema />
+              {firstSchemaName}
+              {tableCount > 0 && ` · ${tableCount} table${tableCount === 1 ? "" : "s"}`}
             </span>
             <button
-              className="btn-primary"
+              className="generate-btn"
               onClick={() => void generate()}
               disabled={
                 state.kind === "generating" ||
@@ -384,36 +419,51 @@ export function Widget() {
             >
               {state.kind === "generating" ? (
                 <>
-                  <span className="btn-spinner" />
+                  <IconProgress className="spin" />
                   Generating
                 </>
-              ) : state.kind === "validation_error" ? (
-                "Try again"
+              ) : isErrorState ? (
+                <>Try again<span className="shortcut">⌘↵</span></>
               ) : (
-                "Generate SQL"
+                <>Generate<span className="shortcut">⌘↵</span></>
               )}
             </button>
           </div>
 
-          <div className="widget-output">
-            <div className="widget-output-header">
-              <span className="field-label">SQL</span>
+          {isErrorState && state.message && (
+            <div className="error-banner">
+              <IconError />
+              <div>
+                <strong>Validation failed</strong>
+                <span className="err-detail">{state.message}</span>
+              </div>
+            </div>
+          )}
+
+          <div className="output-section">
+            <div className="output-header">
+              <label className="field-label" style={{ marginBottom: 0 }}>
+                {isErrorState ? "Generated (rejected)" : "SQL"}
+              </label>
               <CopyButton
-                sql={state.kind === "generated" || state.kind === "validation_error" ? state.sql : ""}
+                sql={
+                  state.kind === "generated" || state.kind === "validation_error"
+                    ? state.sql
+                    : ""
+                }
                 disabled={state.kind !== "generated"}
               />
             </div>
-            {state.kind === "validation_error" && state.message && (
-              <div className="error-banner">{state.message}</div>
-            )}
             <CodeBlock state={state} />
           </div>
         </div>
       )}
 
       <div className="widget-footer">
-        <span>{footerLeft(state)}</span>
-        <span>{footerRight(state, newQuestion)}</span>
+        <div className="footer-left">
+          <FooterLeft state={state} />
+        </div>
+        <FooterRight state={state} />
       </div>
     </div>
   );
@@ -421,44 +471,28 @@ export function Widget() {
 
 // -------- subcomponents --------
 
-function EmptyNoSchema({ onOpenSettings }: { onOpenSettings: () => void }) {
-  return (
-    <div className="empty-state">
-      <div className="empty-icon">⌗</div>
-      <div className="empty-title">No schema loaded</div>
-      <div style={{ fontSize: 12 }}>
-        Connect to a database and extract its schema in the main window.
-      </div>
-      <button className="empty-link" onClick={onOpenSettings}>
-        Open settings →
-      </button>
-    </div>
-  );
-}
-
 function CodeBlock({ state }: { state: WidgetState }) {
   if (state.kind === "default") {
     return (
-      <div className="widget-code-block empty">
+      <div className="code-block empty">
         SQL appears here after you generate.
       </div>
     );
   }
   if (state.kind === "generating") {
     return (
-      <div className="widget-code-block empty">
-        Generating
-        <span className="streaming-cursor">&nbsp;</span>
+      <div className="code-block">
+        <span className="cursor" />
       </div>
     );
   }
   if (state.kind === "empty_no_schema") {
     return null;
   }
-  // generated or validation_error: highlight + display
+  // generated or validation_error
   const tokens = state.sql ? tokenize(state.sql) : [];
   return (
-    <div className={`widget-code-block ${state.kind === "validation_error" ? "greyed" : ""}`}>
+    <div className={`code-block ${state.kind === "validation_error" ? "greyed" : ""}`}>
       {tokens.map((t, i) => (
         <span key={i} className={`tok-${t.kind}`}>
           {t.text}
@@ -469,69 +503,62 @@ function CodeBlock({ state }: { state: WidgetState }) {
 }
 
 function CopyButton({ sql, disabled }: { sql: string; disabled: boolean }) {
-  const [state, setState] = useState<"idle" | "copied" | "error">("idle");
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
   async function copy() {
     if (!sql) return;
     try {
       await navigator.clipboard.writeText(sql);
-      setState("copied");
-      window.setTimeout(() => setState("idle"), 1200);
+      setCopyState("copied");
+      window.setTimeout(() => setCopyState("idle"), 1200);
     } catch {
-      setState("error");
-      window.setTimeout(() => setState("idle"), 1500);
+      setCopyState("error");
+      window.setTimeout(() => setCopyState("idle"), 1500);
     }
   }
   return (
     <button
-      className="btn-copy"
+      className="copy-btn"
       onClick={() => void copy()}
       disabled={disabled || !sql}
       title="Copy SQL"
     >
-      {state === "copied" ? "Copied" : state === "error" ? "Failed" : "Copy"}
+      <IconCopy />
+      {copyState === "copied" ? "Copied" : copyState === "error" ? "Failed" : "Copy"}
     </button>
   );
 }
 
-function footerLeft(state: WidgetState): string {
+function FooterLeft({ state }: { state: WidgetState }) {
   switch (state.kind) {
     case "default":
-      return "ready";
+      return <span className="footer-stat">ready</span>;
     case "generating":
-      return "streaming · esc to cancel";
+      return <span className="footer-stat streaming">generating</span>;
     case "generated":
-      return `${state.durationMs} ms`;
+      return (
+        <span className="footer-stat">
+          <IconSpeed />
+          {state.durationMs}ms
+        </span>
+      );
     case "validation_error":
-      return "rejected";
+      return <span className="footer-stat rejected">rejected</span>;
     case "empty_no_schema":
-      return "no schema";
+      return <span className="footer-stat">setup needed</span>;
   }
 }
 
-function footerRight(state: WidgetState, onNew: () => void): React.ReactNode {
+function FooterRight({ state }: { state: WidgetState }) {
   if (state.kind === "generated") {
     return (
-      <>
-        <span className="footer-stat-ok">validated</span>
-        {" · "}
-        <button
-          onClick={onNew}
-          style={{
-            background: "transparent",
-            border: "none",
-            color: "inherit",
-            font: "inherit",
-            cursor: "pointer",
-            padding: 0,
-          }}
-        >
-          new question
-        </button>
-      </>
+      <span className="footer-stat validated">
+        <IconCheckCircle />
+        validated
+      </span>
     );
   }
-  if (state.kind === "validation_error") {
-    return <span className="footer-stat-error">validation failed</span>;
+  if (state.kind === "generating") {
+    return <span className="footer-stat">esc to cancel</span>;
   }
-  return <span>Ctrl+Shift+Space</span>;
+  return <span className="footer-stat">esc to dismiss</span>;
 }

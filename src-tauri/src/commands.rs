@@ -1028,3 +1028,109 @@ pub async fn show_main_window(app: AppHandle) -> Result<(), String> {
     main.set_focus().map_err(|e| e.to_string())?;
     Ok(())
 }
+
+// ---------- Widget polish (Phase 11) ----------
+
+#[tauri::command]
+pub async fn get_widget_hotkey(store: State<'_, Store>) -> Result<String, String> {
+    Ok(settings_get(&store, crate::SETTING_WIDGET_HOTKEY)
+        .map_err(err)?
+        .unwrap_or_else(|| crate::DEFAULT_WIDGET_HOTKEY.to_string()))
+}
+
+#[tauri::command]
+pub async fn get_widget_hotkey_error(store: State<'_, Store>) -> Result<Option<String>, String> {
+    settings_get(&store, crate::SETTING_WIDGET_HOTKEY_ERROR).map_err(err)
+}
+
+#[tauri::command]
+pub async fn set_widget_hotkey(
+    hotkey: String,
+    app: AppHandle,
+    store: State<'_, Store>,
+) -> Result<(), String> {
+    // Try to register first; only persist on success.
+    crate::register_hotkey(&app, &hotkey)?;
+    settings_set(&store, crate::SETTING_WIDGET_HOTKEY, &hotkey).map_err(err)?;
+    let conn = store.lock();
+    conn.execute(
+        "DELETE FROM settings WHERE key = ?1",
+        params![crate::SETTING_WIDGET_HOTKEY_ERROR],
+    )
+    .map_err(StoreError::from)
+    .map_err(err)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_autostart_enabled(app: AppHandle) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().is_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_autostart_enabled(enabled: bool, app: AppHandle) -> Result<(), String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let manager = app.autolaunch();
+    if enabled {
+        manager.enable().map_err(|e| e.to_string())
+    } else {
+        manager.disable().map_err(|e| e.to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn clamp_widget_to_visible_monitor(app: AppHandle) -> Result<(), String> {
+    let widget = app
+        .get_webview_window("widget")
+        .ok_or_else(|| "widget window not found".to_string())?;
+    ensure_widget_on_visible_monitor(&widget);
+    Ok(())
+}
+
+/// If the widget's current position is outside every available monitor's
+/// work area (e.g. the user disconnected the monitor it was on), move it to
+/// the center of the primary monitor. No-op if already on a visible monitor.
+pub fn ensure_widget_on_visible_monitor(widget: &tauri::WebviewWindow) {
+    let monitors = match widget.available_monitors() {
+        Ok(m) => m,
+        Err(_) => return,
+    };
+    if monitors.is_empty() {
+        return;
+    }
+    let pos = match widget.outer_position() {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+    let size = match widget.outer_size() {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let widget_x = pos.x;
+    let widget_y = pos.y;
+    let widget_w = size.width as i32;
+    let widget_h = size.height as i32;
+    let on_a_monitor = monitors.iter().any(|m| {
+        let mp = m.position();
+        let ms = m.size();
+        let mx = mp.x;
+        let my = mp.y;
+        let mw = ms.width as i32;
+        let mh = ms.height as i32;
+        widget_x + widget_w > mx
+            && widget_x < mx + mw
+            && widget_y + widget_h > my
+            && widget_y < my + mh
+    });
+    if on_a_monitor {
+        return;
+    }
+    // Off-screen — center on the primary monitor (first in the list).
+    let primary = &monitors[0];
+    let mp = primary.position();
+    let ms = primary.size();
+    let new_x = mp.x + (ms.width as i32 - widget_w) / 2;
+    let new_y = mp.y + (ms.height as i32 - widget_h) / 2;
+    let _ = widget.set_position(tauri::PhysicalPosition::new(new_x, new_y));
+}
