@@ -17,6 +17,11 @@
 $__devps1_saved_eap = $ErrorActionPreference
 $ErrorActionPreference = "Stop"
 
+# 0. Reduce cargo parallelism so the `windows` crate (huge Win32 bindings)
+# does not OOM rustc when other crates are compiling in parallel. Override by
+# unsetting $env:CARGO_BUILD_JOBS in your shell after sourcing.
+$env:CARGO_BUILD_JOBS = "1"
+
 # 1. CARGO_HOME — local to this repo.
 $projectDir = $PSScriptRoot
 $cargoHome = Join-Path $projectDir ".cargo-home"

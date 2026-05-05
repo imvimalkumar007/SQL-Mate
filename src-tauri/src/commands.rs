@@ -1,13 +1,13 @@
+use rusqlite::params;
 use serde::Deserialize;
 use tauri::State;
 
 use crate::extract::postgres::{self, PgConnectionParams};
 use crate::llm::anthropic;
 use crate::schema::SchemaModel;
-use crate::store::{ConnectionProfile, NewConnectionProfile, Store};
+use crate::store::{ConnectionProfile, NewConnectionProfile, Store, StoreError};
 
-const KEYCHAIN_SERVICE: &str = "sql-mate";
-const KEYCHAIN_API_KEY_USER: &str = "anthropic-api-key";
+const SETTING_API_KEY: &str = "anthropic_api_key";
 
 fn err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
@@ -31,22 +31,16 @@ pub async fn create_connection_profile(
     req: CreateProfileRequest,
     store: State<'_, Store>,
 ) -> Result<ConnectionProfile, String> {
-    let keychain_ref = format!("connection-password:{}", uuid::Uuid::new_v4());
-    let entry = keyring::Entry::new(KEYCHAIN_SERVICE, &keychain_ref).map_err(err)?;
-    entry.set_password(&req.password).map_err(err)?;
-
     store
-        .create_profile(
-            NewConnectionProfile {
-                name: req.name,
-                dialect: req.dialect,
-                host: req.host,
-                port: req.port,
-                database_name: req.database,
-                username: req.username,
-            },
-            keychain_ref,
-        )
+        .create_profile(NewConnectionProfile {
+            name: req.name,
+            dialect: req.dialect,
+            host: req.host,
+            port: req.port,
+            database_name: req.database,
+            username: req.username,
+            password: req.password,
+        })
         .map_err(err)
 }
 
@@ -62,11 +56,6 @@ pub async fn delete_connection_profile(
     id: String,
     store: State<'_, Store>,
 ) -> Result<(), String> {
-    if let Some(profile) = store.get_profile(&id).map_err(err)? {
-        if let Ok(entry) = keyring::Entry::new(KEYCHAIN_SERVICE, &profile.keychain_ref) {
-            let _ = entry.delete_credential();
-        }
-    }
     store.delete_profile(&id).map_err(err)
 }
 
@@ -104,16 +93,13 @@ pub async fn extract_schema(
         .map_err(err)?
         .ok_or_else(|| "connection profile not found".to_string())?;
 
-    let entry = keyring::Entry::new(KEYCHAIN_SERVICE, &profile.keychain_ref).map_err(err)?;
-    let password = entry.get_password().map_err(err)?;
-
     let model = postgres::extract_schema(
         PgConnectionParams {
             host: profile.host,
             port: profile.port,
             database: profile.database_name,
             username: profile.username,
-            password,
+            password: profile.password,
         },
         &connection_id,
     )
@@ -141,30 +127,47 @@ pub async fn get_persisted_schema(
     }
 }
 
-// ---------- API key (now in OS keychain) ----------
+// ---------- API key (stored in settings table) ----------
 
-#[tauri::command]
-pub async fn save_api_key(api_key: String) -> Result<(), String> {
-    let entry = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_API_KEY_USER).map_err(err)?;
-    entry.set_password(&api_key).map_err(err)?;
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn delete_api_key() -> Result<(), String> {
-    let entry = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_API_KEY_USER).map_err(err)?;
-    let _ = entry.delete_credential();
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn has_api_key() -> Result<bool, String> {
-    let entry = keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_API_KEY_USER).map_err(err)?;
-    match entry.get_password() {
-        Ok(_) => Ok(true),
-        Err(keyring::Error::NoEntry) => Ok(false),
-        Err(e) => Err(e.to_string()),
+fn settings_get(store: &Store, key: &str) -> Result<Option<String>, StoreError> {
+    let conn = store.lock();
+    let mut stmt = conn.prepare("SELECT value FROM settings WHERE key = ?1")?;
+    let mut rows = stmt.query(params![key])?;
+    match rows.next()? {
+        Some(row) => Ok(Some(row.get(0)?)),
+        None => Ok(None),
     }
+}
+
+fn settings_set(store: &Store, key: &str, value: &str) -> Result<(), StoreError> {
+    let conn = store.lock();
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![key, value],
+    )?;
+    Ok(())
+}
+
+fn settings_delete(store: &Store, key: &str) -> Result<(), StoreError> {
+    let conn = store.lock();
+    conn.execute("DELETE FROM settings WHERE key = ?1", params![key])?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn save_api_key(api_key: String, store: State<'_, Store>) -> Result<(), String> {
+    settings_set(&store, SETTING_API_KEY, &api_key).map_err(err)
+}
+
+#[tauri::command]
+pub async fn delete_api_key(store: State<'_, Store>) -> Result<(), String> {
+    settings_delete(&store, SETTING_API_KEY).map_err(err)
+}
+
+#[tauri::command]
+pub async fn has_api_key(store: State<'_, Store>) -> Result<bool, String> {
+    Ok(settings_get(&store, SETTING_API_KEY).map_err(err)?.is_some())
 }
 
 // ---------- SQL generation against the persisted schema ----------
@@ -175,13 +178,8 @@ pub async fn generate_sql(
     question: String,
     store: State<'_, Store>,
 ) -> Result<String, String> {
-    let api_entry =
-        keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_API_KEY_USER).map_err(err)?;
-    let api_key = api_entry.get_password().map_err(|e| match e {
-        keyring::Error::NoEntry => {
-            "No Anthropic API key saved. Add one in settings before generating.".to_string()
-        }
-        other => other.to_string(),
+    let api_key = settings_get(&store, SETTING_API_KEY).map_err(err)?.ok_or_else(|| {
+        "No Anthropic API key saved. Add one in settings before generating.".to_string()
     })?;
 
     let persisted = store

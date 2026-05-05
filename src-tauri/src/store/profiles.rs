@@ -12,7 +12,10 @@ pub struct ConnectionProfile {
     pub port: u16,
     pub database_name: String,
     pub username: String,
-    pub keychain_ref: String,
+    // Stored within the SQLCipher-encrypted local store. Not exposed back to
+    // the frontend.
+    #[serde(skip_serializing)]
+    pub password: String,
     pub created_at: i64,
     pub last_used_at: Option<i64>,
 }
@@ -25,20 +28,20 @@ pub struct NewConnectionProfile {
     pub port: u16,
     pub database_name: String,
     pub username: String,
+    pub password: String,
 }
 
 impl Store {
     pub fn create_profile(
         &self,
         new: NewConnectionProfile,
-        keychain_ref: String,
     ) -> Result<ConnectionProfile, StoreError> {
         let id = uuid::Uuid::new_v4().to_string();
         let created_at = time::OffsetDateTime::now_utc().unix_timestamp();
         let conn = self.lock();
         conn.execute(
             "INSERT INTO connection_profiles
-                (id, name, dialect, host, port, database_name, username, keychain_ref, created_at)
+                (id, name, dialect, host, port, database_name, username, password, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 id,
@@ -48,7 +51,7 @@ impl Store {
                 new.port,
                 new.database_name,
                 new.username,
-                keychain_ref,
+                new.password,
                 created_at,
             ],
         )?;
@@ -60,7 +63,7 @@ impl Store {
             port: new.port,
             database_name: new.database_name,
             username: new.username,
-            keychain_ref,
+            password: new.password,
             created_at,
             last_used_at: None,
         })
@@ -69,7 +72,7 @@ impl Store {
     pub fn list_profiles(&self) -> Result<Vec<ConnectionProfile>, StoreError> {
         let conn = self.lock();
         let mut stmt = conn.prepare(
-            "SELECT id, name, dialect, host, port, database_name, username, keychain_ref, created_at, last_used_at
+            "SELECT id, name, dialect, host, port, database_name, username, password, created_at, last_used_at
              FROM connection_profiles ORDER BY name",
         )?;
         let rows = stmt.query_map([], row_to_profile)?;
@@ -80,7 +83,7 @@ impl Store {
     pub fn get_profile(&self, id: &str) -> Result<Option<ConnectionProfile>, StoreError> {
         let conn = self.lock();
         let mut stmt = conn.prepare(
-            "SELECT id, name, dialect, host, port, database_name, username, keychain_ref, created_at, last_used_at
+            "SELECT id, name, dialect, host, port, database_name, username, password, created_at, last_used_at
              FROM connection_profiles WHERE id = ?1",
         )?;
         let mut rows = stmt.query(params![id])?;
@@ -119,7 +122,7 @@ fn row_to_profile(row: &rusqlite::Row<'_>) -> rusqlite::Result<ConnectionProfile
         port: row.get::<_, i64>(4)? as u16,
         database_name: row.get(5)?,
         username: row.get(6)?,
-        keychain_ref: row.get(7)?,
+        password: row.get(7)?,
         created_at: row.get(8)?,
         last_used_at: row.get(9)?,
     })

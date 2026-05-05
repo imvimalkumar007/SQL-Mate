@@ -192,8 +192,8 @@ function App() {
     <main className="container">
       <h1>SQL Mate</h1>
       <p className="subtitle">
-        Phase 2 — live Postgres extraction, encrypted local store, keychain-backed
-        secrets.
+        Phase 2 — live Postgres extraction, SQLCipher-encrypted local store. OS
+        keychain integration deferred to Phase 7 (see PHASE_2_LOG.md).
       </p>
 
       <section className="card">
@@ -202,7 +202,7 @@ function App() {
           <p className="muted">Loading…</p>
         ) : apiKeySaved ? (
           <div className="row">
-            <span className="status status-ok">Stored in OS keychain</span>
+            <span className="status status-ok">Saved in encrypted local store</span>
             <button onClick={clearApiKey} disabled={apiKeyBusy} className="secondary">
               Clear
             </button>
@@ -272,7 +272,8 @@ function App() {
           >
             <p className="muted small">
               Use a read-only Postgres role per <code>SECURITY_MODEL.md</code>. The password
-              is stored in your OS keychain, not in the local SQLite file.
+              is stored inside the SQLCipher-encrypted local store (Phase 7 will revisit OS
+              keychain integration).
             </p>
             <label>
               Friendly name
