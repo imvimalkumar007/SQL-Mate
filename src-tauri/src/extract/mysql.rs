@@ -1,6 +1,12 @@
+// MySQL / MariaDB schema extractor. See ADR 0012.
+//
+// Mirrors the Postgres extractor but uses sqlx's mysql connection type and
+// the dialect-specific extraction query from
+// `docs/architecture/schema-extraction.md`.
+
 use std::collections::BTreeMap;
 
-use sqlx::postgres::{PgConnectOptions, PgRow};
+use sqlx::mysql::{MySqlConnectOptions, MySqlRow};
 use sqlx::{ConnectOptions, Connection, Row};
 
 use crate::schema::{
@@ -9,58 +15,31 @@ use crate::schema::{
 
 use super::ExtractError;
 
-// Single metadata-only query, copied verbatim from the appendix of
-// docs/architecture/schema-extraction.md. Returns one row per column with
-// joined PK and FK information.
 const EXTRACTION_QUERY: &str = r#"
 SELECT
-  c.table_schema,
-  c.table_name,
-  c.column_name,
-  c.ordinal_position,
-  c.data_type,
-  c.is_nullable,
-  c.column_default,
-  CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END AS is_primary_key,
-  fk.foreign_table_schema,
-  fk.foreign_table_name,
-  fk.foreign_column_name
-FROM information_schema.columns c
-LEFT JOIN (
-  SELECT kcu.table_schema, kcu.table_name, kcu.column_name
-  FROM information_schema.table_constraints tc
-  JOIN information_schema.key_column_usage kcu
-    ON tc.constraint_name = kcu.constraint_name
-   AND tc.table_schema = kcu.table_schema
-  WHERE tc.constraint_type = 'PRIMARY KEY'
-) pk
-  ON c.table_schema = pk.table_schema
- AND c.table_name = pk.table_name
- AND c.column_name = pk.column_name
-LEFT JOIN (
-  SELECT
-    kcu.table_schema, kcu.table_name, kcu.column_name,
-    ccu.table_schema AS foreign_table_schema,
-    ccu.table_name AS foreign_table_name,
-    ccu.column_name AS foreign_column_name
-  FROM information_schema.table_constraints tc
-  JOIN information_schema.key_column_usage kcu
-    ON tc.constraint_name = kcu.constraint_name
-   AND tc.table_schema = kcu.table_schema
-  JOIN information_schema.constraint_column_usage ccu
-    ON ccu.constraint_name = tc.constraint_name
-   AND ccu.table_schema = tc.table_schema
-  WHERE tc.constraint_type = 'FOREIGN KEY'
-) fk
-  ON c.table_schema = fk.table_schema
- AND c.table_name = fk.table_name
- AND c.column_name = fk.column_name
-WHERE c.table_schema NOT IN ('pg_catalog', 'information_schema')
-ORDER BY c.table_schema, c.table_name, c.ordinal_position
+  c.TABLE_SCHEMA AS table_schema,
+  c.TABLE_NAME AS table_name,
+  c.COLUMN_NAME AS column_name,
+  c.ORDINAL_POSITION AS ordinal_position,
+  c.DATA_TYPE AS data_type,
+  c.IS_NULLABLE AS is_nullable,
+  c.COLUMN_DEFAULT AS column_default,
+  CASE WHEN c.COLUMN_KEY = 'PRI' THEN 1 ELSE 0 END AS is_primary_key,
+  kcu.REFERENCED_TABLE_SCHEMA AS foreign_table_schema,
+  kcu.REFERENCED_TABLE_NAME AS foreign_table_name,
+  kcu.REFERENCED_COLUMN_NAME AS foreign_column_name
+FROM information_schema.COLUMNS c
+LEFT JOIN information_schema.KEY_COLUMN_USAGE kcu
+  ON c.TABLE_SCHEMA = kcu.TABLE_SCHEMA
+ AND c.TABLE_NAME = kcu.TABLE_NAME
+ AND c.COLUMN_NAME = kcu.COLUMN_NAME
+ AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+WHERE c.TABLE_SCHEMA NOT IN ('mysql', 'sys', 'performance_schema', 'information_schema')
+ORDER BY c.TABLE_SCHEMA, c.TABLE_NAME, c.ORDINAL_POSITION
 "#;
 
 #[derive(Debug, Clone)]
-pub struct PgConnectionParams {
+pub struct MySqlConnectionParams {
     pub host: String,
     pub port: u16,
     pub database: String,
@@ -68,9 +47,9 @@ pub struct PgConnectionParams {
     pub password: String,
 }
 
-impl PgConnectionParams {
-    fn into_options(self) -> PgConnectOptions {
-        PgConnectOptions::new()
+impl MySqlConnectionParams {
+    fn into_options(self) -> MySqlConnectOptions {
+        MySqlConnectOptions::new()
             .host(&self.host)
             .port(self.port)
             .database(&self.database)
@@ -79,29 +58,22 @@ impl PgConnectionParams {
     }
 }
 
-/// Open the connection and run `SELECT 1`. Used by the UI's "Test connection"
-/// button before saving a connection profile.
-pub async fn test_connection(params: PgConnectionParams) -> Result<(), ExtractError> {
+pub async fn test_connection(params: MySqlConnectionParams) -> Result<(), ExtractError> {
     let mut conn = params
         .into_options()
         .connect()
         .await
         .map_err(super::classify_connect_error)?;
-
     sqlx::query("SELECT 1")
         .execute(&mut conn)
         .await
         .map_err(super::classify_query_error)?;
-
     let _ = conn.close().await;
     Ok(())
 }
 
-/// Connect with read-only intent and run the metadata-only extraction query.
-/// Returns the canonical `SchemaModel`. `connection_id` is recorded into the
-/// model's `source` field and must match the persisted connection-profile id.
 pub async fn extract_schema(
-    params: PgConnectionParams,
+    params: MySqlConnectionParams,
     connection_id: &str,
 ) -> Result<SchemaModel, ExtractError> {
     let mut conn = params
@@ -111,12 +83,14 @@ pub async fn extract_schema(
         .map_err(super::classify_connect_error)?;
 
     // Defense in depth on top of the user-configured read-only role.
-    sqlx::query("SET default_transaction_read_only = on")
+    // MySQL 5.6+ supports `SET SESSION TRANSACTION READ ONLY` per-connection;
+    // we set it on the session for any subsequent BEGIN.
+    sqlx::query("SET SESSION TRANSACTION READ ONLY")
         .execute(&mut conn)
         .await
         .map_err(super::classify_query_error)?;
 
-    let rows: Vec<PgRow> = sqlx::query(EXTRACTION_QUERY)
+    let rows: Vec<MySqlRow> = sqlx::query(EXTRACTION_QUERY)
         .fetch_all(&mut conn)
         .await
         .map_err(super::classify_query_error)?;
@@ -131,7 +105,7 @@ pub async fn extract_schema(
 }
 
 fn build_schema_model(
-    rows: Vec<PgRow>,
+    rows: Vec<MySqlRow>,
     connection_id: &str,
 ) -> Result<SchemaModel, ExtractError> {
     let mut by_table: BTreeMap<(String, String), TableBuilder> = BTreeMap::new();
@@ -143,7 +117,7 @@ fn build_schema_model(
         let data_type: String = get_field(&row, "data_type")?;
         let is_nullable: String = get_field(&row, "is_nullable")?;
         let column_default: Option<String> = get_field(&row, "column_default")?;
-        let is_primary_key: bool = get_field(&row, "is_primary_key")?;
+        let is_primary_key_int: i64 = get_field(&row, "is_primary_key")?;
         let foreign_table_schema: Option<String> = get_field(&row, "foreign_table_schema")?;
         let foreign_table_name: Option<String> = get_field(&row, "foreign_table_name")?;
         let foreign_column_name: Option<String> = get_field(&row, "foreign_column_name")?;
@@ -161,7 +135,7 @@ fn build_schema_model(
             sensitive: false,
         });
 
-        if is_primary_key {
+        if is_primary_key_int != 0 {
             entry.primary_key.push(column_name.clone());
         }
 
@@ -195,7 +169,7 @@ fn build_schema_model(
         .collect();
 
     Ok(SchemaModel {
-        dialect: Dialect::Postgres,
+        dialect: Dialect::MySql,
         schemas,
         extracted_at: time::OffsetDateTime::now_utc().unix_timestamp(),
         source: ExtractionSource::Live {
@@ -204,9 +178,9 @@ fn build_schema_model(
     })
 }
 
-fn get_field<'r, T>(row: &'r PgRow, name: &str) -> Result<T, ExtractError>
+fn get_field<'r, T>(row: &'r MySqlRow, name: &str) -> Result<T, ExtractError>
 where
-    T: sqlx::Decode<'r, sqlx::Postgres> + sqlx::Type<sqlx::Postgres>,
+    T: sqlx::Decode<'r, sqlx::MySql> + sqlx::Type<sqlx::MySql>,
 {
     row.try_get(name)
         .map_err(|e| ExtractError::Other(format!("could not read column {name}: {e}")))

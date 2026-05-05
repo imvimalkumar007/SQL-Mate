@@ -18,10 +18,26 @@ type Validation =
   | { state: "ok"; referenced: string[] }
   | { state: "error"; message: string };
 
+type DbDialect = "postgres" | "mysql" | "sqlite" | "mssql";
+
+const DIALECT_OPTIONS: Array<{
+  value: DbDialect;
+  label: string;
+  default_port: string;
+  enabled: boolean;
+  note?: string;
+}> = [
+  { value: "postgres", label: "PostgreSQL",       default_port: "5432", enabled: true },
+  { value: "mysql",    label: "MySQL / MariaDB",  default_port: "3306", enabled: true },
+  { value: "sqlite",   label: "SQLite (deferred)", default_port: "",    enabled: false, note: "see PHASE_6_LOG.md" },
+  { value: "mssql",    label: "SQL Server (deferred)", default_port: "1433", enabled: false, note: "see PHASE_6_LOG.md" },
+];
+
 type NewProfileForm = {
   name: string;
+  dialect: DbDialect;
   host: string;
-  port: string; // string in form, parsed to u16 on submit
+  port: string;
   database: string;
   username: string;
   password: string;
@@ -29,6 +45,7 @@ type NewProfileForm = {
 
 const EMPTY_FORM: NewProfileForm = {
   name: "",
+  dialect: "postgres",
   host: "localhost",
   port: "5432",
   database: "",
@@ -231,6 +248,7 @@ function App() {
       if (Number.isNaN(port)) throw new Error("port must be a number");
       await invoke("test_connection", {
         req: {
+          dialect: form.dialect,
           host: form.host,
           port,
           database: form.database,
@@ -254,7 +272,7 @@ function App() {
       const created = await invoke<ConnectionProfile>("create_connection_profile", {
         req: {
           name: form.name || `${form.host}:${port}/${form.database}`,
-          dialect: "postgres",
+          dialect: form.dialect,
           host: form.host,
           port,
           database: form.database,
@@ -553,10 +571,33 @@ function App() {
             }}
           >
             <p className="muted small">
-              Use a read-only Postgres role per <code>SECURITY_MODEL.md</code>. The password
-              is stored inside the SQLCipher-encrypted local store (Phase 7 will revisit OS
-              keychain integration).
+              Use a read-only role per <code>SECURITY_MODEL.md</code>. The password is stored
+              inside the SQLCipher-encrypted local store (Phase 7 will revisit OS keychain
+              integration). Phase 6 supports PostgreSQL and MySQL; SQLite and SQL Server are
+              named deferrals — see PHASE_6_LOG.md.
             </p>
+            <label>
+              Dialect
+              <select
+                value={form.dialect}
+                onChange={(e) => {
+                  const d = e.currentTarget.value as DbDialect;
+                  const opt = DIALECT_OPTIONS.find((o) => o.value === d);
+                  setForm({
+                    ...form,
+                    dialect: d,
+                    port: opt && opt.default_port ? opt.default_port : form.port,
+                  });
+                }}
+              >
+                {DIALECT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value} disabled={!o.enabled}>
+                    {o.label}
+                    {o.note ? ` — ${o.note}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label>
               Friendly name
               <input

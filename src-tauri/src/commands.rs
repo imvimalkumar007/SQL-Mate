@@ -8,7 +8,7 @@ use sqlx::postgres::{PgConnectOptions, PgRow};
 use sqlx::{Column, ConnectOptions, Connection, Row};
 use tauri::State;
 
-use crate::extract::postgres::{self, PgConnectionParams};
+use crate::extract::{self, ConnectionParams};
 use crate::llm::{embeddings as llm_embeddings, AnthropicProvider, OpenAIProvider, Provider, SqlGenerationRequest};
 use crate::retrieve;
 use crate::schema::SchemaModel;
@@ -89,6 +89,7 @@ pub async fn delete_connection_profile(
 
 #[derive(Debug, Deserialize)]
 pub struct TestConnectionRequest {
+    pub dialect: String,
     pub host: String,
     pub port: u16,
     pub database: String,
@@ -98,13 +99,16 @@ pub struct TestConnectionRequest {
 
 #[tauri::command]
 pub async fn test_connection(req: TestConnectionRequest) -> Result<(), String> {
-    postgres::test_connection(PgConnectionParams {
-        host: req.host,
-        port: req.port,
-        database: req.database,
-        username: req.username,
-        password: req.password,
-    })
+    extract::test_connection(
+        &req.dialect,
+        ConnectionParams {
+            host: req.host,
+            port: req.port,
+            database: req.database,
+            username: req.username,
+            password: req.password,
+        },
+    )
     .await
     .map_err(err)
 }
@@ -119,8 +123,9 @@ pub async fn extract_schema(
         .map_err(err)?
         .ok_or_else(|| "connection profile not found".to_string())?;
 
-    let model = postgres::extract_schema(
-        PgConnectionParams {
+    let model = extract::extract_schema(
+        &profile.dialect,
+        ConnectionParams {
             host: profile.host,
             port: profile.port,
             database: profile.database_name,

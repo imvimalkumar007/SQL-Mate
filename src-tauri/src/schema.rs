@@ -16,7 +16,8 @@ pub struct SchemaModel {
 #[serde(rename_all = "snake_case")]
 pub enum Dialect {
     Postgres,
-    // MySql, Sqlite, MsSql land in Phase 6.
+    MySql,
+    // Sqlite, MsSql remain deferred — see ADR 0012 and PHASE_6_LOG.md.
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

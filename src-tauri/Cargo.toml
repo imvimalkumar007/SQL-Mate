@@ -24,7 +24,7 @@ serde_json = "1"
 # HTTP client. Pinned, minimal features. See docs/decisions/0005-reqwest-for-http.md.
 reqwest = { version = "=0.13.3", default-features = false, features = ["rustls", "json"] }
 # Postgres driver. Pinned, minimal features. See docs/decisions/0006-sqlx-for-postgres.md.
-sqlx = { version = "=0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres"] }
+sqlx = { version = "=0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres", "mysql"] }
 # Local encrypted store. Pinned. See docs/decisions/0007-sqlcipher-for-local-store.md.
 rusqlite = { version = "=0.39.0", features = ["bundled-sqlcipher-vendored-openssl"] }
 # NOTE: keyring removed in Phase 2 follow-up. set_password silently failed to
