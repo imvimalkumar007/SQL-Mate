@@ -9,6 +9,7 @@ import type {
   ModelRegistry,
   ProviderConfig,
   ProviderKind,
+  RequestLogEntry,
   SchemaModel,
   ValidatedSql,
 } from "./types";
@@ -124,6 +125,12 @@ function App() {
   const [embeddingBusy, setEmbeddingBusy] = useState(false);
   const [embeddingError, setEmbeddingError] = useState<string | null>(null);
 
+  // Annotations + redactions (Phase 8)
+  type EditingTarget = { schemaName: string; tableName: string; columnName: string | null };
+  const [editing, setEditing] = useState<EditingTarget | null>(null);
+  const [annotationDraft, setAnnotationDraft] = useState("");
+  const [requestLog, setRequestLog] = useState<RequestLogEntry | null>(null);
+
   useEffect(() => {
     void refreshProviders();
     void invoke<ModelRegistry>("get_model_registry").then((r) => {
@@ -140,6 +147,8 @@ function App() {
     setGenerateError(null);
     setEmbeddingStats(null);
     setEmbeddingError(null);
+    setRequestLog(null);
+    setEditing(null);
     if (!selectedId) return;
     void invoke<SchemaModel | null>("get_persisted_schema", { connectionId: selectedId })
       .then(setSchema)
@@ -256,6 +265,92 @@ function App() {
     }
   }
 
+  // Phase 8: redaction + annotation helpers.
+  async function reloadSchema() {
+    if (!selectedId) return;
+    const fresh = await invoke<SchemaModel | null>("get_persisted_schema", {
+      connectionId: selectedId,
+    });
+    setSchema(fresh);
+  }
+
+  async function toggleExcluded(schemaName: string, tableName: string, currently: boolean) {
+    if (!selectedId) return;
+    if (currently) {
+      await invoke("clear_redaction", {
+        req: { connection_id: selectedId, schema_name: schemaName, table_name: tableName, column_name: null },
+      });
+    } else {
+      await invoke("set_redaction", {
+        req: { connection_id: selectedId, schema_name: schemaName, table_name: tableName, column_name: null, kind: "excluded" },
+      });
+    }
+    await reloadSchema();
+  }
+
+  async function toggleSensitive(
+    schemaName: string,
+    tableName: string,
+    columnName: string,
+    currently: boolean,
+  ) {
+    if (!selectedId) return;
+    if (currently) {
+      await invoke("clear_redaction", {
+        req: { connection_id: selectedId, schema_name: schemaName, table_name: tableName, column_name: columnName },
+      });
+    } else {
+      await invoke("set_redaction", {
+        req: { connection_id: selectedId, schema_name: schemaName, table_name: tableName, column_name: columnName, kind: "sensitive" },
+      });
+    }
+    await reloadSchema();
+  }
+
+  function startAnnotating(target: EditingTarget, current: string | null) {
+    setEditing(target);
+    setAnnotationDraft(current ?? "");
+  }
+
+  async function saveAnnotation() {
+    if (!selectedId || !editing) return;
+    const trimmed = annotationDraft.trim();
+    if (trimmed === "") {
+      await invoke("clear_annotation", {
+        req: {
+          connection_id: selectedId,
+          schema_name: editing.schemaName,
+          table_name: editing.tableName,
+          column_name: editing.columnName,
+        },
+      });
+    } else {
+      await invoke("set_annotation", {
+        req: {
+          connection_id: selectedId,
+          schema_name: editing.schemaName,
+          table_name: editing.tableName,
+          column_name: editing.columnName,
+          annotation: trimmed,
+        },
+      });
+    }
+    setEditing(null);
+    setAnnotationDraft("");
+    await reloadSchema();
+  }
+
+  async function refreshRequestLog(connectionId: string) {
+    try {
+      const entry = await invoke<RequestLogEntry | null>("get_last_request_log", {
+        connectionId,
+      });
+      setRequestLog(entry);
+    } catch {
+      setRequestLog(null);
+    }
+  }
+
   async function testConnection() {
     setFormBusy(true);
     setTestStatus(null);
@@ -347,6 +442,7 @@ function App() {
       setGeneratedSql(result.sql);
       setHistoryId(result.history_id);
       setGeneratedByModel(result.model);
+      void refreshRequestLog(selectedId);
       void validate(result.sql, result.history_id);
     } catch (e) {
       setGenerateError(String(e));
@@ -761,22 +857,96 @@ function App() {
               {embeddingError && (
                 <div className="status status-error">{embeddingError}</div>
               )}
+              {(() => {
+                const allTables = schema.schemas.flatMap((s) => s.tables);
+                const excludedCount = allTables.filter((t) => t.excluded).length;
+                const sensitiveCount = allTables
+                  .flatMap((t) => t.columns)
+                  .filter((c) => c.sensitive).length;
+                return (
+                  <div className="redaction-summary">
+                    {allTables.length} table{allTables.length === 1 ? "" : "s"}
+                    {", "}
+                    {excludedCount} excluded
+                    {", "}
+                    {sensitiveCount} sensitive column{sensitiveCount === 1 ? "" : "s"}
+                  </div>
+                );
+              })()}
               <div className="schema-tree">
                 {schema.schemas.map((s) => (
                   <div key={s.name} className="schema-block">
                     <div className="schema-name">{s.name}</div>
-                    {s.tables.map((t) => (
-                      <details key={t.name} className="table-block">
+                    {s.tables.map((t) => {
+                      const editingThisTable =
+                        editing?.schemaName === s.name &&
+                        editing.tableName === t.name &&
+                        editing.columnName === null;
+                      return (
+                      <details key={t.name} className={`table-block${t.excluded ? " excluded" : ""}`}>
                         <summary>
                           <span className="table-name">{t.name}</span>
                           <span className="muted small">
                             {" "}
                             ({t.columns.length} col{t.columns.length === 1 ? "" : "s"})
                           </span>
+                          <span className="row-actions">
+                            <button
+                              type="button"
+                              className={`toggle-chip danger${t.excluded ? " on" : ""}`}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                void toggleExcluded(s.name, t.name, t.excluded);
+                              }}
+                            >
+                              {t.excluded ? "excluded" : "exclude"}
+                            </button>
+                            <button
+                              type="button"
+                              className="toggle-chip"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                startAnnotating({ schemaName: s.name, tableName: t.name, columnName: null }, t.user_annotation ?? null);
+                              }}
+                            >
+                              {t.user_annotation ? "edit note" : "add note"}
+                            </button>
+                          </span>
                         </summary>
+                        {t.user_annotation && !editingThisTable && (
+                          <span className="annotation-text">— {t.user_annotation}</span>
+                        )}
+                        {editingThisTable && (
+                          <div className="annotation-editor">
+                            <textarea
+                              rows={2}
+                              value={annotationDraft}
+                              onChange={(e) => setAnnotationDraft(e.currentTarget.value)}
+                              placeholder="What is this table for? Notes are sent to the LLM as context."
+                            />
+                            <button type="button" onClick={() => void saveAnnotation()}>
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              className="link"
+                              onClick={() => {
+                                setEditing(null);
+                                setAnnotationDraft("");
+                              }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        )}
                         <ul className="column-list">
-                          {t.columns.map((c) => (
-                            <li key={c.name}>
+                          {t.columns.map((c) => {
+                            const editingThisCol =
+                              editing?.schemaName === s.name &&
+                              editing.tableName === t.name &&
+                              editing.columnName === c.name;
+                            return (
+                            <li key={c.name} className={c.sensitive ? "sensitive" : ""}>
                               <code>{c.name}</code>: {c.data_type}
                               {t.primary_key.includes(c.name) && (
                                 <span className="badge">PK</span>
@@ -790,11 +960,61 @@ function App() {
                                     {fk.references_columns.join(",")}
                                   </span>
                                 ))}
+                              {c.sensitive && <span className="badge">sensitive</span>}
+                              <span className="row-actions">
+                                <button
+                                  type="button"
+                                  className={`toggle-chip${c.sensitive ? " on" : ""}`}
+                                  onClick={() => void toggleSensitive(s.name, t.name, c.name, c.sensitive)}
+                                >
+                                  {c.sensitive ? "sensitive" : "mark sensitive"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="toggle-chip"
+                                  onClick={() =>
+                                    startAnnotating(
+                                      { schemaName: s.name, tableName: t.name, columnName: c.name },
+                                      c.user_annotation ?? null,
+                                    )
+                                  }
+                                >
+                                  {c.user_annotation ? "edit note" : "add note"}
+                                </button>
+                              </span>
+                              {c.user_annotation && !editingThisCol && (
+                                <span className="annotation-text">— {c.user_annotation}</span>
+                              )}
+                              {editingThisCol && (
+                                <div className="annotation-editor">
+                                  <textarea
+                                    rows={2}
+                                    value={annotationDraft}
+                                    onChange={(e) => setAnnotationDraft(e.currentTarget.value)}
+                                    placeholder="Notes about this column."
+                                  />
+                                  <button type="button" onClick={() => void saveAnnotation()}>
+                                    Save
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="link"
+                                    onClick={() => {
+                                      setEditing(null);
+                                      setAnnotationDraft("");
+                                    }}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              )}
                             </li>
-                          ))}
+                            );
+                          })}
                         </ul>
                       </details>
-                    ))}
+                      );
+                    })}
                   </div>
                 ))}
               </div>
@@ -956,6 +1176,37 @@ function App() {
                 </div>
               )}
             </>
+          )}
+          {requestLog && (
+            <div className="request-log">
+              <details>
+                <summary>
+                  Request log — what was sent to the model
+                  {requestLog.obfuscated_columns > 0 &&
+                    ` · ${requestLog.obfuscated_columns} sensitive column${requestLog.obfuscated_columns === 1 ? "" : "s"} obfuscated`}
+                  {requestLog.excluded_tables.length > 0 &&
+                    ` · ${requestLog.excluded_tables.length} table${requestLog.excluded_tables.length === 1 ? "" : "s"} excluded`}
+                </summary>
+                <div className="log-meta">
+                  Sent to <code>{requestLog.model}</code> ({requestLog.provider_kind}) at{" "}
+                  {new Date(requestLog.timestamp * 1000).toLocaleTimeString()}.
+                  {requestLog.excluded_tables.length > 0 && (
+                    <>
+                      {" Excluded: "}
+                      {requestLog.excluded_tables.map((t, i) => (
+                        <code key={i} style={{ marginRight: "0.4rem" }}>
+                          {t}
+                        </code>
+                      ))}
+                    </>
+                  )}
+                </div>
+                <div className="log-meta">System prompt</div>
+                <pre>{requestLog.system_prompt}</pre>
+                <div className="log-meta">User message (post-obfuscation, as sent)</div>
+                <pre>{requestLog.user_message}</pre>
+              </details>
+            </div>
           )}
         </section>
       )}
