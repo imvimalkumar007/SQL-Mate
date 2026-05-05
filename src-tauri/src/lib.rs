@@ -61,7 +61,6 @@ pub fn run() {
             commands::get_model_registry,
             commands::generate_sql,
             commands::validate_sql,
-            commands::execute_query,
             commands::list_history,
             commands::clear_history,
             commands::set_annotation,

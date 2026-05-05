@@ -45,8 +45,6 @@ getrandom = "=0.3.4"
 # Async process + IO + channels for the Python sidecar manager.
 # See docs/decisions/0009-python-sidecar-lifecycle.md.
 tokio = { version = "1", features = ["process", "io-util", "sync", "macros", "rt-multi-thread", "time"] }
-# Stream utilities for row-streaming the query execution path.
-futures = "0.3"
 # PDF generation for the Phase 9 security review pack. Pure Rust, MIT, no
 # native deps; uses only the built-in standard fonts so we don't have to
 # bundle font files. See `src/security_pdf.rs`.
