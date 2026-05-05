@@ -16,13 +16,13 @@ Tauri app launches. Hardcoded schema is sent to a hardcoded Anthropic API call w
 
 **Done when:** A developer on each target OS can run `pnpm tauri dev`, paste an API key into a settings field, click a button, and see a SQL query generated from a stub schema. — Verified end-to-end on Windows. macOS and Linux verification deferred until those machines are available; see `PHASE_1_LOG.md` for the build log.
 
-## Phase 2 — Live schema extraction (Postgres only) (current)
+## Phase 2 — Live schema extraction (Postgres only) (done)
 
 Implement the Rust schema extractor for Postgres. User pastes connection details, app connects with read-only credentials, runs the metadata queries documented in `docs/architecture/schema-extraction.md`, normalizes to the canonical schema model, persists to the local SQLite store.
 
-**Done when:** A user can connect to a real Postgres database, see the extracted schema in the UI, and have it persisted across app restarts. End-to-end question-to-SQL works against this real schema.
+**Done when:** A user can connect to a real Postgres database, see the extracted schema in the UI, and have it persisted across app restarts. End-to-end question-to-SQL works against this real schema. — Verified end-to-end on Windows against a local Postgres 17.9 instance with a 4-table seed schema. OS keychain integration deferred per ADR 0008; see PHASE_2_LOG.md for the build log.
 
-## Phase 3 — Validation and execution
+## Phase 3 — Validation and execution (current)
 
 Wire up the Python sidecar with `sqlglot`. Generated SQL is validated for read-only before display. Add the "run query" button that executes against the user's database in a read-only transaction with a timeout and row cap.
 

@@ -2,11 +2,13 @@
 
 ## Status
 
-Accepted.
+Accepted. Amended in Phase 2: the SQLCipher key is loaded from a file at
+`<app data dir>/sql-mate/.db-key`, not from the OS keychain — see ADR 0008 for
+why and when to revisit.
 
 ## Context
 
-`docs/architecture/schema-store.md` mandates that the local store at `<app data dir>/sql-mate/store.db` is encrypted with SQLCipher, with the encryption key derived from a value held in the OS keychain. SQLCipher is the de facto standard for SQLite-at-rest encryption; it's a fork of SQLite with a page-level encryption layer that needs an OpenSSL-compatible cryptographic provider.
+`docs/architecture/schema-store.md` mandates that the local store at `<app data dir>/sql-mate/store.db` is encrypted with SQLCipher, with the encryption key derived from a value held in the OS keychain. (As of Phase 2, the keychain part is deferred — see ADR 0008.) SQLCipher is the de facto standard for SQLite-at-rest encryption; it's a fork of SQLite with a page-level encryption layer that needs an OpenSSL-compatible cryptographic provider.
 
 This creates a tension with ADR 0005, which chose `rustls` specifically to avoid an OpenSSL dependency in the LLM HTTP path. We need to be explicit about how we resolve that.
 

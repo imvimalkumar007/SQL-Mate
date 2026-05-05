@@ -4,7 +4,7 @@ Extracts the canonical schema model from the user's database, using only metadat
 
 ## Inputs
 
-- A connection profile: dialect, host, port, database name, username, and a reference to the keychain entry holding the password (or a path to a TLS client cert if applicable).
+- A connection profile: dialect, host, port, database name, username, and the password. (Phase 2 stores the password inside the SQLCipher-encrypted local store rather than the OS keychain — see ADR 0008.)
 - The user's confirmation, given through the UI, that they want to extract.
 
 ## Outputs

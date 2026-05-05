@@ -10,7 +10,7 @@ These are claims we make and that the architecture structurally enforces. A user
 2. **We are not in the data path.** The application makes its LLM calls directly from your machine to the provider you configured, using the API key you provided. We do not proxy. We do not have a server. We could not see your data even if we wanted to.
 3. **Generated SQL is read-only by construction.** Every query we generate is parsed and validated for read-only operations before you see it. The validator rejects any query that mutates state. This is enforced at the application layer; we additionally require you to use database credentials that are read-only at the database layer.
 4. **You see every query before it runs.** We never auto-execute a generated query. The query is displayed in the UI with an explanation of what it does, and you click run.
-5. **Your API keys live in your operating system's secure storage.** macOS Keychain, Windows Credential Manager, or Linux Secret Service. We never write keys to disk ourselves.
+5. **Your API keys and database passwords are stored encrypted at rest on your machine.** As of Phase 2, secrets live in a SQLCipher-encrypted local SQLite file (AES-256-CBC, key in a sibling file). The original spec called for the OS keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service); that integration is deferred and tracked in ADR 0008. We never log keys, transmit them, or include them in telemetry.
 6. **No telemetry by default.** If you opt in, telemetry pings contain only anonymous usage counts and never include schema names, query text, or any database content.
 
 ## What we do not guarantee
@@ -51,7 +51,7 @@ These are the threats we design against, in priority order.
 
 **Scenario:** A user's LLM API key is read by malware, by another application on their machine, or by us.
 
-**Mitigation:** Keys are stored in OS keychain. We read the key only at the moment of an outbound LLM request and do not cache it in long-lived memory. We never log keys. We never include keys in error messages or telemetry.
+**Mitigation:** Keys are stored in the SQLCipher-encrypted local store (Phase 2). We read the key from the store only at the moment of an outbound LLM request and do not cache it in long-lived memory. We never log keys. We never include keys in error messages or telemetry. The original mitigation called for the OS keychain; ADR 0008 defers that to Phase 7. The threat profile is weakened: an attacker with read access to the user's app data directory has both the encrypted store and the SQLCipher key file. A real keychain would raise the bar to OS-level credential access.
 
 ### T5: Data leak via logs
 
