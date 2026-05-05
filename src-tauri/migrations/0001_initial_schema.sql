@@ -9,7 +9,11 @@ CREATE TABLE connection_profiles (
     port INTEGER NOT NULL,
     database_name TEXT NOT NULL,
     username TEXT NOT NULL,
-    keychain_ref TEXT NOT NULL,
+    -- Phase 2: password is stored within the SQLCipher-encrypted DB. The
+    -- original spec called for a keychain reference here, but keyring's
+    -- set_password silently no-ops on this Windows version. Tracked as Phase 7
+    -- follow-up to revisit OS keychain integration.
+    password TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     last_used_at INTEGER
 );

@@ -27,8 +27,10 @@ reqwest = { version = "=0.13.3", default-features = false, features = ["rustls",
 sqlx = { version = "=0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres"] }
 # Local encrypted store. Pinned. See docs/decisions/0007-sqlcipher-for-local-store.md.
 rusqlite = { version = "=0.39.0", features = ["bundled-sqlcipher-vendored-openssl"] }
-# OS keychain access for SQLCipher key, DB passwords, and the LLM API key.
-keyring = "=3.6.3"
+# NOTE: keyring removed in Phase 2 follow-up. set_password silently failed to
+# persist on this Windows install (10.0.26200) for both keyring 3.6.3 and 4.0.0.
+# Secrets are kept in the SQLCipher-encrypted local store for now; revisit when
+# Phase 7 lands and the redaction layer needs a re-evaluation.
 uuid = { version = "=1.23.1", features = ["v4", "serde"] }
 time = { version = "=0.3.47", features = ["serde", "formatting"] }
 # CSPRNG for the SQLCipher key generated on first launch.
