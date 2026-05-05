@@ -104,9 +104,9 @@ records dialect per profile and `extract::dispatch_extract_schema` already
 uses it. Five-line change. Already noted as a Phase 6 follow-up in
 [PHASE_6_LOG.md](PHASE_6_LOG.md) §"Operational notes".
 
-### 2. `execute_query` is Postgres-only — **fixed 2026-05-05**
+### 2. `execute_query` is Postgres-only — **fixed 2026-05-05**, then **moot 2026-05-06** (Phase 9 UX overhaul)
 
-**Status:** ~~bug~~ **resolved** (see resolution log)
+**Status:** ~~bug~~ **resolved**, then made **moot** by execution removal in the Phase 9 UX overhaul. The `execute_query` Tauri command no longer exists — the app does not run generated SQL at all per SECURITY_MODEL.md T2.
 **Location:** [src-tauri/src/commands.rs:561-603](src-tauri/src/commands.rs#L561-L603)
 
 `execute_query` always builds a `PgConnectOptions`, runs the
@@ -137,22 +137,13 @@ behind the telemetry-opt-in pattern.
 view. Removing the table is the wrong call — it's cheap to keep an empty table
 and the migration is forward-only.
 
-### 4. Generated SQL renders Postgres timestamp / UUID / JSON columns as `<unsupported type: ...>` — **partially fixed 2026-05-05**
+### 4. Generated SQL renders Postgres timestamp / UUID / JSON columns as `<unsupported type: ...>` — **moot 2026-05-06** (Phase 9 UX overhaul)
 
-**Status:** ~~limitation~~ **partially resolved** (see resolution log)
-
-Postgres TIMESTAMPTZ / TIMESTAMP / DATE / TIME / UUID and the equivalent
-MySQL date/time types now render correctly. JSON / JSONB columns still fall
-through to the String fallback (Postgres returns the text representation at
-the wire level, so they're legible — just not parsed into structured
-`serde_json::Value`).
-
-The remaining JSON gap is blocked on the libsqlite3-sys collision documented
-in ADR 0012 §4: enabling sqlx's `json` feature pulls `sqlx-sqlite` into the
-dep graph, which collides with rusqlite's `bundled-sqlcipher` build of
-libsqlite3-sys. Resolving it requires either a `[patch.crates-io]`
-workaround for `sqlx-sqlite` or the same dual-SQLite reproduction the ADR
-already deferred. Reopen as a fresh entry if a user actually runs into it.
+**Status:** ~~limitation~~ **moot**. The decoders existed only on the
+`execute_query` path. With execution removed, there are no rows to
+render and no decoder to extend. If a future version reintroduces
+execution, the libsqlite3-sys-collision constraint on the sqlx `json`
+feature still applies and would need to be solved then.
 
 ---
 

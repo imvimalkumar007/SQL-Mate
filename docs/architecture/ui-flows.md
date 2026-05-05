@@ -68,16 +68,17 @@ settings (`onboarding_completed`).
 
 Modules involved: sql-generation, llm-provider, sql-validation.
 
-## Running a query and viewing results
+## Running a query (out of scope for this app, Phase 9)
 
-1. User clicks "Run query."
-2. Backend executes the SQL against the user's database in a read-only transaction.
-3. Results stream into a virtualized grid in the UI.
-4. Below the grid: row count, execution time, "export to CSV" button.
-5. User can click any cell to see the full value (useful for long text fields).
-6. User can click "Ask a follow-up" to start a new question with this query as context for the model.
+The app does not run generated SQL. The user copies the validated SQL out
+of the UI and runs it in their own tool. Phase 9's UX overhaul removed
+the run-query button and the entire `execute_query` backend code path
+per the SECURITY_MODEL T2 mitigation.
 
-Modules involved: query-execution.
+The clipboard-friendly affordance lives on the generated-SQL panel: a
+copy icon in the corner of the SQL block writes the validated SQL to the
+system clipboard via the Web Clipboard API. The user pastes into psql,
+DBeaver, DataGrip, or whatever they use to run queries.
 
 ## Reviewing and editing extracted schema
 
