@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "providers": [
     {
       "id": "anthropic",
@@ -13,7 +13,7 @@
           "context_window": 200000,
           "supports_caching": true,
           "supports_structured_output": true,
-          "recommended_for": "default"
+          "cost_tier": "high"
         },
         {
           "id": "claude-sonnet-4-6",
@@ -21,6 +21,7 @@
           "context_window": 200000,
           "supports_caching": true,
           "supports_structured_output": true,
+          "cost_tier": "mid",
           "recommended_for": "fast"
         },
         {
@@ -29,7 +30,8 @@
           "context_window": 200000,
           "supports_caching": true,
           "supports_structured_output": true,
-          "recommended_for": "cheapest"
+          "cost_tier": "low",
+          "recommended_for": "default"
         }
       ],
       "retention_note": "Zero retention available on Enterprise tier; otherwise 30 days. See https://anthropic.com/legal."
@@ -46,7 +48,7 @@
           "context_window": 128000,
           "supports_caching": false,
           "supports_structured_output": true,
-          "recommended_for": "default"
+          "cost_tier": "mid"
         },
         {
           "id": "gpt-5-mini",
@@ -54,7 +56,8 @@
           "context_window": 128000,
           "supports_caching": false,
           "supports_structured_output": true,
-          "recommended_for": "fast"
+          "cost_tier": "low",
+          "recommended_for": "default"
         }
       ],
       "retention_note": "Zero retention available on Enterprise tier; otherwise per OpenAI's data-usage policy. See https://openai.com/policies."
@@ -71,7 +74,8 @@
           "context_window": 128000,
           "supports_caching": false,
           "supports_structured_output": false,
-          "recommended_for": "fast"
+          "cost_tier": "low",
+          "recommended_for": "default"
         }
       ],
       "retention_note": "See Groq's data policy at https://groq.com/privacy-policy/."
@@ -88,6 +92,7 @@
           "context_window": 200000,
           "supports_caching": false,
           "supports_structured_output": false,
+          "cost_tier": "high",
           "recommended_for": "default"
         }
       ],

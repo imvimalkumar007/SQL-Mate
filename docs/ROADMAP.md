@@ -46,19 +46,25 @@ Add MySQL, SQL Server, SQLite. Each requires its own extractor and dialect-aware
 
 **Done when:** All four dialects pass the Phase 3 done-when criterion. — Phase 6 ships **MySQL** end-to-end (extractor, dispatcher, dialect dropdown). SQLite is deferred until the `sqlx-sqlite` × `rusqlite + bundled-sqlcipher` linker conflict is investigated; SQL Server is deferred until there's a real SQL Server to test against and a willingness to onboard `tiberius`. See ADR 0012 and `PHASE_6_LOG.md` for the named revisit conditions.
 
-## Phase 7 — Redaction and annotations (current)
+## Phase 7 — Model and provider switching (current)
+
+User-facing picker in the main query UI to switch providers and models per session, with a cost-tier indicator pulled from the model registry. Defaults bias toward the cheapest model so first-time users don't get a surprise bill from Opus 4.7. Implements ADR 0013.
+
+**Done when:** A user with two configured providers can swap between them in the main query screen, and within Anthropic can swap between Opus / Sonnet / Haiku — without leaving the query flow. The generated-SQL view shows which model produced it. The model registry's `cost_tier` field drives the indicator shown next to each model.
+
+## Phase 8 — Redaction and annotations
 
 User can mark tables, columns, or schemas as excluded or sensitive. Sensitive entities are sent to the LLM with obfuscated names and de-obfuscated on the way back. User can write annotations on tables and columns that get included in the prompt to improve generation quality.
 
 **Done when:** A user can extract a schema, mark three tables as excluded and two columns as sensitive, ask a question, and verify in the request log that the excluded tables are absent and the sensitive columns are obfuscated.
 
-## Phase 8 — Polish and packaging
+## Phase 9 — Polish and packaging
 
 Signed installers for macOS (notarized), Windows (Authenticode), Linux (AppImage and deb). First-run onboarding flow. In-app documentation pack for security review. Settings UI for telemetry opt-in.
 
 **Done when:** A user can download the app from a clean machine, install it, follow onboarding to a working query, and the security team has a single PDF they can review.
 
-## Phase 9 — First five users
+## Phase 10 — First five users
 
 Get five target users (regulated mid-market data engineers) using the app weekly. Iterate based on what they actually struggle with. Do not add features that no user asked for.
 
