@@ -55,7 +55,7 @@ sql-mate/
 - **Frontend**: TypeScript, React, Tailwind CSS
 - **Backend**: Rust, with Python sidecar for `sqlglot` validation
 - **Database drivers**: `sqlx` (Rust) for Postgres, MySQL, SQLite, MSSQL
-- **LLM**: BYO key — Anthropic SDK + OpenAI SDK as first-class, OpenAI-compatible HTTP for everything else
+- **LLM**: BYO key; Anthropic SDK + OpenAI SDK as first-class, OpenAI-compatible HTTP for everything else
 - **Local storage**: SQLCipher-encrypted SQLite for schema cache, query history, and secrets. OS keychain integration deferred to Phase 7, see [ADR 0008](docs/decisions/0008-no-keychain-in-phase-2.md).
 
 Licence
