@@ -18,7 +18,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/window";
+import { PhysicalPosition } from "@tauri-apps/api/window";
 import "./widget.css";
 import { tokenize } from "./SqlBlock";
 import {
@@ -60,9 +60,6 @@ type PersistedState = {
   pill_mode: boolean;
 };
 
-const EXPANDED = { width: 400, height: 500 };
-const PILL = { width: 220, height: 30 };
-
 export function Widget() {
   const [state, setState] = useState<WidgetState>({ kind: "default" });
   const [pillMode, setPillMode] = useState(false);
@@ -87,7 +84,9 @@ export function Widget() {
           // Ignore — position restoration is best-effort across monitor changes.
         }
       }
-      await applyWindowSize(persisted.pill_mode);
+      // Window size is applied from Rust (lib.rs::apply_widget_size_from_store)
+      // before the window is shown, so the dimensions are already correct
+      // by the time React mounts. No JS-side setSize needed.
 
       const reg = await invoke<ModelRegistry>("get_model_registry");
       setRegistry(reg);
@@ -186,25 +185,17 @@ export function Widget() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  async function applyWindowSize(pill: boolean) {
-    const dims = pill ? PILL : EXPANDED;
-    try {
-      await getCurrentWindow().setSize(new LogicalSize(dims.width, dims.height));
-    } catch {
-      // Ignore — Tauri occasionally errors mid-resize on Windows.
-    }
-  }
-
+  // Note: window resize lives in Rust (lib.rs::apply_widget_size). The
+  // set_widget_pill_mode command resizes the window after persisting the
+  // mode, so JS doesn't need to round-trip through the window plugin.
   async function collapseToPill() {
     await invoke("set_widget_pill_mode", { pillMode: true });
     setPillMode(true);
-    await applyWindowSize(true);
   }
 
   async function expandFromPill() {
     await invoke("set_widget_pill_mode", { pillMode: false });
     setPillMode(false);
-    await applyWindowSize(false);
     if (textareaRef.current) textareaRef.current.focus();
   }
 

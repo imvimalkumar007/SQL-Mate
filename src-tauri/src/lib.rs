@@ -16,8 +16,11 @@ use sidecar::SidecarManager;
 use store::Store;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, LogicalSize, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+
+const WIDGET_EXPANDED: (f64, f64) = (400.0, 500.0);
+const WIDGET_PILL: (f64, f64) = (220.0, 30.0);
 
 // Windows-only per ADR 0014. Use "Ctrl" rather than "CommandOrControl"
 // because the latter is a legacy alias that tauri-plugin-global-shortcut's
@@ -209,6 +212,7 @@ pub fn run() {
 
 fn show_widget_window(app: &AppHandle) {
     if let Some(widget) = app.get_webview_window("widget") {
+        apply_widget_size_from_store(app, &widget);
         commands::ensure_widget_on_visible_monitor(&widget);
         let _ = widget.show();
         let _ = widget.set_focus();
@@ -222,11 +226,39 @@ fn toggle_widget_window(app: &AppHandle) {
         if visible {
             let _ = widget.hide();
         } else {
+            apply_widget_size_from_store(app, &widget);
             commands::ensure_widget_on_visible_monitor(&widget);
             let _ = widget.show();
             let _ = widget.set_focus();
             let _ = app.emit_to("widget", "widget://focus", ());
         }
+    }
+}
+
+/// Read pill_mode from the store and resize the widget window accordingly.
+/// Doing the resize from Rust *before* the window is shown avoids a race
+/// in the JS side where the React render happened with stale window
+/// dimensions (giving us a pill rendered at full-screen size). This is
+/// called on every show, so the window dimensions always match the
+/// persisted pill_mode flag.
+pub fn apply_widget_size_from_store(app: &AppHandle, widget: &tauri::WebviewWindow) {
+    let store: tauri::State<Store> = app.state();
+    let pill = store
+        .get_widget_state()
+        .ok()
+        .map(|s| s.pill_mode)
+        .unwrap_or(false);
+    let (w, h) = if pill { WIDGET_PILL } else { WIDGET_EXPANDED };
+    let _ = widget.set_size(LogicalSize::new(w, h));
+}
+
+/// Resize to a specific mode and save the new mode to the store. Used by
+/// the collapse / expand commands so JS doesn't have to round-trip a
+/// LogicalSize through Tauri's window plugin.
+pub fn apply_widget_size(app: &AppHandle, pill: bool) {
+    if let Some(widget) = app.get_webview_window("widget") {
+        let (w, h) = if pill { WIDGET_PILL } else { WIDGET_EXPANDED };
+        let _ = widget.set_size(LogicalSize::new(w, h));
     }
 }
 

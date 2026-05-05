@@ -964,9 +964,14 @@ pub async fn set_widget_position(
 #[tauri::command]
 pub async fn set_widget_pill_mode(
     pill_mode: bool,
+    app: AppHandle,
     store: State<'_, Store>,
 ) -> Result<(), String> {
-    store.set_widget_pill_mode(pill_mode).map_err(err)
+    store.set_widget_pill_mode(pill_mode).map_err(err)?;
+    // Apply the new size from Rust — doing it here avoids a race in JS
+    // where the React render happens with stale window dimensions.
+    crate::apply_widget_size(&app, pill_mode);
+    Ok(())
 }
 
 #[derive(Debug, Deserialize)]
