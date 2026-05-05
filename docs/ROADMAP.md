@@ -58,11 +58,16 @@ User can mark tables, columns, or schemas as excluded or sensitive. Sensitive en
 
 **Done when:** A user can extract a schema, mark three tables as excluded and two columns as sensitive, ask a question, and verify in the request log that the excluded tables are absent and the sensitive columns are obfuscated.
 
-## Phase 9 — Polish and packaging
+## Phase 9 — Polish and packaging (current)
 
 Signed installers for macOS (notarized), Windows (Authenticode), Linux (AppImage and deb). First-run onboarding flow. In-app documentation pack for security review. Settings UI for telemetry opt-in.
 
 **Done when:** A user can download the app from a clean machine, install it, follow onboarding to a working query, and the security team has a single PDF they can review.
+
+This phase is split into 9a (in-app, this branch) and 9b (real-world signing infrastructure, separate work):
+
+- **9a — code, doable on the dev machine:** first-run onboarding wizard; security review PDF (printpdf); telemetry opt-in toggle; Tauri bundle config for `msi` / `nsis` / `dmg` / `appimage` / `deb`; `.github/workflows/build.yml` producing unsigned installers on each OS for cross-OS verification.
+- **9b — blocked on real-world resources:** macOS notarization (Apple Developer Program account, Mac builder); Windows Authenticode (code-signing cert from a CA); Linux deb GPG signing; distribution channels (Homebrew, winget, apt repo). See `docs/PHASE_9B_DEFERRED.md` for the named revisit conditions.
 
 ## Phase 10 — First five users
 
