@@ -8,8 +8,8 @@ These are claims we make and that the architecture structurally enforces. A user
 
 1. **Row data from your database never leaves your machine.** Not to the LLM provider, not to us, not to anywhere. The LLM call path receives only schema metadata (table and column names, types, keys, user-written descriptions). Query results are displayed locally and stored locally, never transmitted.
 2. **We are not in the data path.** The application makes its LLM calls directly from your machine to the provider you configured, using the API key you provided. We do not proxy. We do not have a server. We could not see your data even if we wanted to.
-3. **Generated SQL is read-only by construction.** Every query we generate is parsed and validated for read-only operations before you see it. The validator rejects any query that mutates state. This is enforced at the application layer; we additionally require you to use database credentials that are read-only at the database layer.
-4. **You see every query before it runs.** We never auto-execute a generated query. The query is displayed in the UI with an explanation of what it does, and you click run.
+3. **Generated SQL is read-only by construction.** Every query we generate is parsed and validated for read-only operations before you see it. The validator rejects any query that mutates state. This is enforced at the application layer; we recommend you also use database credentials that are read-only at the database layer.
+4. **The app does not execute generated SQL.** As of the Phase 9 UX overhaul we removed the run-query path entirely. The app produces validated SQL and you copy it into your own tool to run. This is a stronger posture than "auto-execute disabled" — there is simply no execution code path inside the app.
 5. **Your API keys and database passwords are stored encrypted at rest on your machine.** As of Phase 2, secrets live in a SQLCipher-encrypted local SQLite file (AES-256-CBC, key in a sibling file). The original spec called for the OS keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service); that integration is deferred and tracked in ADR 0008. We never log keys, transmit them, or include them in telemetry.
 6. **No telemetry by default.** If you opt in, telemetry pings contain only anonymous usage counts and never include schema names, query text, or any database content.
 
@@ -33,13 +33,15 @@ These are the threats we design against, in priority order.
 
 ### T2: Destructive SQL executed against the user's database
 
-**Scenario:** The LLM generates an `UPDATE`, `DELETE`, `DROP`, or similar query, and it runs.
+**Scenario:** The LLM generates an `UPDATE`, `DELETE`, `DROP`, or similar query, and it runs against the user's database.
 
-**Mitigation, layer 1 (database):** We require users to configure read-only database credentials and provide setup snippets per dialect. This is the primary control.
+**Primary mitigation (Phase 9):** The app does not run generated SQL. There is no execution code path inside the application; the user copies the validated SQL out and runs it in a tool of their choice. A buggy LLM, a hostile prompt-injection, and a software bug in this app all converge on the same outcome: a SQL string sitting in the UI that does nothing until the user takes external action.
 
-**Mitigation, layer 2 (application):** Every generated query is parsed by `sqlglot` and rejected if it is not a pure `SELECT`. The validator is dialect-aware. See `docs/architecture/sql-validation.md` for the exact list of rejected statement types and why.
+**Belt-and-suspenders mitigations that still ship:**
 
-**Mitigation, layer 3 (UI):** Queries are never auto-run. The user clicks run after reviewing.
+- **Layer 1 (Rust pre-parse):** rejects any SQL that doesn't start with `SELECT`/`WITH` or that contains forbidden mutating keywords. Catches the obvious cases before the sidecar even sees them.
+- **Layer 2 (sqlglot AST in the Python sidecar):** parses the SQL, walks the tree, rejects any mutation node, system tables, denylisted functions, and references to tables or columns not in the user's actual extracted schema. Dialect-aware. See `docs/architecture/sql-validation.md`.
+- **User-side recommendation:** use database credentials that are read-only at the database layer. The app surfaces this in the onboarding wizard and the security review PDF. With execution removed it is no longer load-bearing for this app, but it remains good hygiene for whatever tool the user runs the SQL in.
 
 ### T3: Prompt injection via ingested content
 
@@ -76,10 +78,12 @@ These are the threats we design against, in priority order.
 A reviewer should be able to confirm our claims by:
 
 1. Reading `src-tauri/src/llm/` and confirming that the request payload is built only from schema metadata fields, never from any field that could carry row data.
-2. Inspecting outbound network calls (e.g., with a proxy) and confirming that the only destinations are the configured LLM provider, the configured database, and the model registry URL.
-3. Reading `src-tauri/src/validator/` and the Python sidecar and confirming the read-only enforcement logic.
-4. Running the app with a deliberately malformed schema or adversarial column comments and observing that no information from those fields can cause data exfiltration.
-5. Inspecting log files after extended use and confirming no schema or query content is present.
+2. Inspecting outbound network calls (e.g., with a proxy) and confirming that the only destinations are the configured LLM provider and the configured database (the model registry is bundled, not fetched).
+3. Confirming that `src-tauri/src/commands.rs` has no `execute_query` Tauri command and no path that opens a database connection for query execution. The only DB connection the app opens is the metadata-only schema-extraction connection in `src-tauri/src/extract/`.
+4. Reading the Python sidecar (`sidecar/main.py`) and the Rust pre-parse (`layer1_prevalidate` in `commands.rs`) and confirming the read-only enforcement logic — these still ship as defense in depth even though no execution path consumes their verdict.
+5. Running the app with a deliberately malformed schema or adversarial column comments and observing that no information from those fields can cause data exfiltration.
+6. Inspecting log files after extended use and confirming no schema or query content is present.
+7. Exporting the security review PDF (Settings → Security review pack → Export) and verifying every claim in it against the live state.
 
 ## Disclosure
 

@@ -22,11 +22,13 @@ Implement the Rust schema extractor for Postgres. User pastes connection details
 
 **Done when:** A user can connect to a real Postgres database, see the extracted schema in the UI, and have it persisted across app restarts. End-to-end question-to-SQL works against this real schema. — Verified end-to-end on Windows against a local Postgres 17.9 instance with a 4-table seed schema. OS keychain integration deferred per ADR 0008; see PHASE_2_LOG.md for the build log.
 
-## Phase 3 — Validation and execution (done)
+## Phase 3 — Validation and execution (done; execution later removed in Phase 9)
 
 Wire up the Python sidecar with `sqlglot`. Generated SQL is validated for read-only before display. Add the "run query" button that executes against the user's database in a read-only transaction with a timeout and row cap.
 
 **Done when:** The full loop works for Postgres: connect, extract, ask, see SQL, validate, run, see results. All without any row data touching the LLM call path. Validator rejects all non-`SELECT` statements in tests. — Verified end-to-end on Windows: Python 3.14 sidecar with `sqlglot==30.7.0`, layer-1 Rust pre-parse, layer-2 sqlglot AST walk, executor running in a `default_transaction_read_only` enforced transaction with 1000-row cap and 30 s timeout. See `PHASE_3_LOG.md`.
+
+**Phase 9 update:** the run-query path was removed entirely during Phase 9's UX overhaul. The validator still ships and still gates whether SQL is shown to the user, but the executor is gone — see `docs/architecture/query-execution.md` for the archaeology marker and `SECURITY_MODEL.md` T2 for the rationale. This phase's "done" status remains correct as a historical record of when the loop was first end-to-end working.
 
 ## Phase 4 — Provider abstraction (done)
 
@@ -58,18 +60,43 @@ User can mark tables, columns, or schemas as excluded or sensitive. Sensitive en
 
 **Done when:** A user can extract a schema, mark three tables as excluded and two columns as sensitive, ask a question, and verify in the request log that the excluded tables are absent and the sensitive columns are obfuscated.
 
-## Phase 9 — Polish and packaging (current)
+## Phase 9 — Polish and packaging
 
-Signed installers for macOS (notarized), Windows (Authenticode), Linux (AppImage and deb). First-run onboarding flow. In-app documentation pack for security review. Settings UI for telemetry opt-in.
+Signed installers for macOS (notarized), Windows (Authenticode), Linux (AppImage and deb). First-run onboarding flow. In-app documentation pack for security review. Settings UI for telemetry opt-in. UX overhaul.
 
-**Done when:** A user can download the app from a clean machine, install it, follow onboarding to a working query, and the security team has a single PDF they can review.
+**Done when:** A user can download the app from a clean machine, install it, follow onboarding to validated SQL ready to copy out, and the security team has a single PDF they can review.
 
-This phase is split into 9a (in-app, this branch) and 9b (real-world signing infrastructure, separate work):
+The "working query" wording from earlier drafts of this doc has been adjusted: Phase 9 also removed the in-app run-query path entirely (see `docs/architecture/query-execution.md`). The done-when criterion is now "validated SQL ready to copy" rather than "results displayed in the app."
 
-- **9a — code, doable on the dev machine:** first-run onboarding wizard; security review PDF (printpdf); telemetry opt-in toggle; Tauri bundle config for `msi` / `nsis` / `dmg` / `appimage` / `deb`; `.github/workflows/build.yml` producing unsigned installers on each OS for cross-OS verification.
+This phase is split into 9a (in-app, shipped) and 9b (real-world signing infrastructure, separate work):
+
+- **9a — shipped:**
+  - First-run onboarding wizard (welcome → provider → connection → schema → done)
+  - Security review PDF via `printpdf`, generated locally, listing the security model + current configuration + endpoints + verbatim extraction queries
+  - Telemetry opt-in toggle (placeholder; no payload sent in this build)
+  - Tauri bundle config for `msi` / `nsis` / `dmg` / `appimage` / `deb`
+  - `.github/workflows/build.yml` producing unsigned installers on each OS — finally moves BUGS.md #10 (cross-OS verification) forward
+  - **UX overhaul** in response to user feedback during testing: removed the run-query button and the entire `execute_query` backend; restructured the home into three sections (schema, ask, generated SQL) with a top-bar nav and modal dialogs for providers / connections / settings / security review; added syntax-highlighted SQL with click-to-copy; added in-memory session history of past Q+SQL pairs.
+
 - **9b — blocked on real-world resources:** macOS notarization (Apple Developer Program account, Mac builder); Windows Authenticode (code-signing cert from a CA); Linux deb GPG signing; distribution channels (Homebrew, winget, apt repo). See `docs/PHASE_9B_DEFERRED.md` for the named revisit conditions.
 
-## Phase 10 — First five users
+## Phase 10 — Windows widget mode (current)
+
+Floating widget as the primary UI on Windows, summoned by a global hotkey, backed by a system tray icon. Implements ADR 0014. The existing main window stays as the admin surface (settings, schema review, redaction, history); the widget is for the hot path (ask → SQL → copy).
+
+**Done when:** A user on Windows can press `Ctrl+Shift+Space`, see the widget appear with the textarea focused, type a question, get validated SQL back, copy it, and dismiss the widget — all without the widget ever being more than two clicks away from the IDE underneath. The widget renders all six states from the design spec (default, streaming-as-spinner, generated, validation error, empty/no-schema, pill collapsed). Position, last question, and last generated SQL persist across launches.
+
+Streaming SQL output is explicitly out of scope for Phase 10 — the "Streaming" state in the design spec is implemented as a single spinner. Token-by-token streaming would touch the LLM provider abstraction; revisit in a follow-up phase if user feedback shows it matters.
+
+See `docs/PHASE_10_KICKOFF.md` for the full kickoff doc.
+
+## Phase 11 — Widget polish
+
+Multi-monitor position memory, hotkey customization UI, auto-start on Windows boot, and any other widget polish that surfaces from real use of Phase 10. Each item is listed in `docs/PHASE_10_KICKOFF.md` under "What this phase does not deliver" — Phase 11 is where they land.
+
+**Done when:** the rough edges from Phase 10 (single-monitor only, hardcoded hotkey, no auto-start) are addressed and the widget feels native on Windows — opens after reboot, restores to the right monitor, doesn't conflict with other apps' hotkeys.
+
+## Phase 12 — First five users
 
 Get five target users (regulated mid-market data engineers) using the app weekly. Iterate based on what they actually struggle with. Do not add features that no user asked for.
 

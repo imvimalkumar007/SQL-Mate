@@ -56,13 +56,8 @@ export type ValidatedSql = {
   referenced_tables: string[];
 };
 
-export type ExecutionResult = {
-  columns: string[];
-  rows: unknown[][];
-  row_count: number;
-  truncated: boolean;
-  duration_ms: number;
-};
+// ExecutionResult removed in Phase 9 UX overhaul — the app no longer runs
+// generated SQL. See SECURITY_MODEL.md T2.
 
 export type ProviderKind = "anthropic" | "openai" | "openai_compatible";
 

@@ -18,7 +18,11 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# `tray-icon` feature added in Phase 10 for the system tray that backs the
+# floating widget. See ADR 0014 and PHASE_10_KICKOFF.md.
+tauri = { version = "2", features = ["tray-icon"] }
+# Global hotkey registration for the widget summon. Phase 10 / ADR 0014.
+tauri-plugin-global-shortcut = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # HTTP client. Pinned, minimal features. See docs/decisions/0005-reqwest-for-http.md.
@@ -45,8 +49,6 @@ getrandom = "=0.3.4"
 # Async process + IO + channels for the Python sidecar manager.
 # See docs/decisions/0009-python-sidecar-lifecycle.md.
 tokio = { version = "1", features = ["process", "io-util", "sync", "macros", "rt-multi-thread", "time"] }
-# Stream utilities for row-streaming the query execution path.
-futures = "0.3"
 # PDF generation for the Phase 9 security review pack. Pure Rust, MIT, no
 # native deps; uses only the built-in standard fonts so we don't have to
 # bundle font files. See `src/security_pdf.rs`.

@@ -54,16 +54,16 @@ Generic HTTP client that targets any base URL exposing `/v1/chat/completions`. C
 A provider is configured with:
 
 - A friendly name shown in the UI
+- The provider kind (`anthropic`, `openai`, or `openai_compatible`)
 - A base URL (defaulted, editable)
-- A keychain reference for the API key
+- The API key, stored encrypted in the SQLCipher local store (originally specified as a keychain reference; keychain integration deferred per ADR 0008)
 - The selected model identifier
-- Optional headers (used for Azure deployments and OpenRouter routing)
 
-The active configuration is stored in `settings`. Multiple configurations can be saved; one is active.
+The active configuration's id is stored in `settings.active_provider_id`. Multiple configurations can be saved; one is active. Per-question model switching (Phase 7 / ADR 0013) updates the active config's `model` field.
 
 ## Model registry
 
-A static JSON file fetched from a CDN at app launch and cached locally. Falls back to a bundled copy if offline. Shape:
+A static JSON file bundled with the app at `src-tauri/resources/model_registry.json` (compiled in via `include_str!`). v1 does not fetch from a CDN — bundled-only is the simpler and auditable choice; the security review PDF lists it as "no remote fetch." A future phase may add an opt-in remote fetch with a signed manifest. Shape:
 
 ```json
 {
@@ -76,11 +76,12 @@ A static JSON file fetched from a CDN at app launch and cached locally. Falls ba
       "base_url": "https://api.anthropic.com",
       "models": [
         {
-          "id": "claude-opus-4-7",
-          "name": "Claude Opus 4.7",
+          "id": "claude-haiku-4-5-20251001",
+          "name": "Claude Haiku 4.5",
           "context_window": 200000,
           "supports_caching": true,
           "supports_structured_output": true,
+          "cost_tier": "low",
           "recommended_for": "default"
         }
       ],

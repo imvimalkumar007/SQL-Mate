@@ -56,18 +56,22 @@ CREATE TABLE redactions (
   PRIMARY KEY (connection_id, schema_name, table_name, column_name)
 );
 
--- Question and SQL history. Results are NOT stored here; only the question and generated SQL.
+-- Question and SQL history. The app does not execute SQL (Phase 9), so the
+-- last three columns are vestigial — they hold their default values
+-- forever and are kept only because removing them would require a forward
+-- migration that's not worth the cost. If execution ever returns these
+-- become useful again.
 CREATE TABLE history (
   id TEXT PRIMARY KEY,
   connection_id TEXT NOT NULL,
   asked_at INTEGER NOT NULL,
   question TEXT NOT NULL,
   generated_sql TEXT,
-  validation_status TEXT NOT NULL,  -- 'pending', 'passed', 'failed'
+  validation_status TEXT NOT NULL,  -- 'generated', 'valid', 'invalid'
   validation_error TEXT,
-  was_executed INTEGER NOT NULL DEFAULT 0,
-  execution_row_count INTEGER,
-  execution_duration_ms INTEGER,
+  was_executed INTEGER NOT NULL DEFAULT 0,    -- vestigial; always 0
+  execution_row_count INTEGER,                -- vestigial; always NULL
+  execution_duration_ms INTEGER,              -- vestigial; always NULL
   FOREIGN KEY (connection_id) REFERENCES connection_profiles(id) ON DELETE CASCADE
 );
 
@@ -80,13 +84,14 @@ CREATE TABLE settings (
 
 ## What is deliberately not stored
 
-- Query results. Held in frontend state for the duration of the session, never persisted.
+- Query results. The app does not execute SQL, so there are no results to store.
 - Schema content from row data. We never have any.
+- Telemetry events. Phase 9 ships a telemetry opt-in toggle in settings, but this build never sends a payload regardless of the flag.
 
 ## Secrets
 
 - **Database passwords** are stored in the `connection_profiles.password` column inside the SQLCipher-encrypted store (Phase 2). Original spec was OS keychain; deferred per ADR 0008.
-- **LLM API keys** are stored in the `settings` table under key `anthropic_api_key`, also inside the SQLCipher-encrypted store. Same deferral as above.
+- **LLM API keys** are stored in `provider_configs.api_key` (one row per configured provider, added in Phase 4 with migration 0002), also inside the SQLCipher-encrypted store. Same deferral as above. The keys are read from the store at the moment of an outbound LLM request and not cached in long-lived memory.
 - **The SQLCipher key itself** is in `<app data dir>/sql-mate/.db-key`, sitting next to the encrypted store with normal user-mode ACLs. Rebuilding the keychain story is a Phase 7 follow-up.
 
 ## Migrations

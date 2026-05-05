@@ -1,9 +1,19 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
-  "windows": ["main"],
+  "description": "Default capability for both the main window and the floating widget. Phase 10 / ADR 0014: the widget needs core:window (resize, position, focus), core:event (listen for the widget://focus event), and the global-shortcut allow-list.",
+  "windows": ["main", "widget"],
   "permissions": [
-    "core:default"
+    "core:default",
+    "core:window:default",
+    "core:window:allow-set-size",
+    "core:window:allow-set-position",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
+    "core:window:allow-is-visible",
+    "core:window:allow-unminimize",
+    "core:event:default",
+    "global-shortcut:default"
   ]
 }
