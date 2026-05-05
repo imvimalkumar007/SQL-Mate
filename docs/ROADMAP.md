@@ -34,13 +34,13 @@ Refactor the LLM client into the provider interface documented in `docs/architec
 
 **Done when:** A user can switch between Anthropic, OpenAI, and a third provider (e.g., Groq via OpenAI-compatible) without restarting the app. API keys are stored in the SQLCipher-encrypted local store. (The original done-when called for OS keychain storage; deferred to Phase 7 per ADR 0008. Closed enum dispatch instead of `Box<dyn LlmProvider>` per ADR 0010.) See `PHASE_4_LOG.md` for the build log.
 
-## Phase 5 — Schema retrieval for larger databases (current)
+## Phase 5 — Schema retrieval for larger databases (done — code path)
 
 Add embedding-based table retrieval for schemas with more than ~50 tables. Embeddings are computed locally if a local model is available, or via the configured LLM provider's embedding endpoint otherwise (still BYO key, still no row data).
 
-**Done when:** The app generates correct SQL on a 200-table benchmark schema with quality comparable to small-schema performance.
+**Done when:** The app generates correct SQL on a 200-table benchmark schema with quality comparable to small-schema performance. — Phase 5 ships the **path** end to end: provider-endpoint embeddings (OpenAI / OpenAI-compatible), JSON-stored vectors, brute-force cosine, top-20 + FK neighborhood expansion, integration with `generate_sql`. The 200-table quality benchmark is genuinely deferred to Phase 9 (first five users) because we don't have a 200-table schema or a labeled question set to measure against. Local embedding model is a follow-up. See ADR 0011 and `PHASE_5_LOG.md`.
 
-## Phase 6 — Other dialects
+## Phase 6 — Other dialects (current)
 
 Add MySQL, SQL Server, SQLite. Each requires its own extractor and dialect-aware validator settings. UI does not change meaningfully.
 
