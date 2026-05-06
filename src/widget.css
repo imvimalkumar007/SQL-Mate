@@ -425,3 +425,121 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 .pill-chevron-btn:hover { background: var(--surface-4); color: var(--text); }
 .pill .pill-chevron { font-size: 14px; }
 .pill:hover { background: var(--surface-3); }
+
+/* ---------------- connection picker ---------------- */
+
+.conn-picker-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  -webkit-app-region: no-drag;
+  transition: background 0.12s, color 0.12s;
+  max-width: 170px;
+  white-space: nowrap;
+  overflow: hidden;
+  min-width: 0;
+}
+.conn-picker-btn:hover,
+.conn-picker-btn.open {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.conn-picker-btn svg {
+  font-size: 13px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.conn-picker-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conn-menu {
+  position: fixed;
+  top: 33px;
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  z-index: 50;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.conn-menu-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  cursor: pointer;
+  gap: 8px;
+  transition: background 0.1s;
+}
+.conn-menu-item:last-child { border-bottom: none; }
+.conn-menu-item:hover { background: var(--surface-3); }
+.conn-menu-item.active { background: var(--surface-2); }
+.conn-menu-item-info { flex: 1; min-width: 0; }
+
+.conn-item-name {
+  font-size: 12px;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: var(--text);
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.conn-item-name.dim { color: var(--text-dim); }
+
+.conn-item-age {
+  font-size: 10px;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: var(--text-dim);
+}
+.conn-item-age.stale { color: var(--danger); }
+.conn-item-age.italic { font-style: italic; }
+
+.conn-item-check {
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.conn-refresh-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  padding: 3px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  font-size: 16px;
+  -webkit-app-region: no-drag;
+  transition: color 0.12s, background 0.12s;
+}
+.conn-refresh-btn:hover { color: var(--primary); background: var(--surface-3); }
+.conn-refresh-btn svg { font-size: 16px; }
+
+/* ---------------- stale SQL (after connection switch) ---------------- */
+
+.stale-sql-notice {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-bottom: 5px;
+}
+.stale-sql-notice svg { font-size: 12px; }
+.code-block.stale { opacity: 0.45; }

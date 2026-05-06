@@ -145,6 +145,14 @@ pub async fn extract_schema(
 }
 
 #[tauri::command]
+pub async fn get_schema_extracted_at(
+    connection_id: String,
+    store: State<'_, Store>,
+) -> Result<Option<i64>, String> {
+    store.get_schema_extracted_at(&connection_id).map_err(err)
+}
+
+#[tauri::command]
 pub async fn get_persisted_schema(
     connection_id: String,
     store: State<'_, Store>,

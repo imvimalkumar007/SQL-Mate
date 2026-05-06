@@ -43,4 +43,18 @@ impl Store {
             None => Ok(None),
         }
     }
+
+    pub fn get_schema_extracted_at(
+        &self,
+        connection_id: &str,
+    ) -> Result<Option<i64>, StoreError> {
+        let conn = self.lock();
+        let mut stmt =
+            conn.prepare("SELECT extracted_at FROM schemas WHERE connection_id = ?1")?;
+        let mut rows = stmt.query(params![connection_id])?;
+        match rows.next()? {
+            Some(row) => Ok(Some(row.get(0)?)),
+            None => Ok(None),
+        }
+    }
 }
