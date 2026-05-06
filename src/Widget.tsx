@@ -1,14 +1,16 @@
 // Phase 10 / ADR 0014: floating widget on Windows.
 // Phase 11 polish: realigned to docs/design/widget-prototype.html.
+// Phase 12 / ADR 0015: multi-database connection picker.
 //
-// Six states from docs/design/widget-design-spec.md:
+// Eight states from docs/design/widget-design-spec.md:
 //   1. default            — schema loaded, no question yet
-//   2. generating         — single spinner (no token streaming, see
-//                            PHASE_10_KICKOFF.md)
+//   2. generating         — single spinner (no token streaming)
 //   3. generated          — SQL complete + validated
 //   4. validation_error   — sqlglot rejected the SQL
 //   5. empty_no_schema    — first run or no extracted schema
 //   6. pill               — separate render path (window resized to 220×30)
+//   7. (picker open)      — overlaid on any of the above via pickerOpen flag
+//   8. (after switch)     — generated/error state with sqlIsStale=true
 //
 // Widget is read-only on configuration — adding providers, editing
 // connections, redaction, and history all live in the main window. Header
@@ -22,12 +24,16 @@ import { PhysicalPosition } from "@tauri-apps/api/window";
 import "./widget.css";
 import { tokenize } from "./SqlBlock";
 import {
+  IconCheck,
   IconCheckCircle,
   IconClose,
   IconCopy,
   IconError,
   IconExpandLess,
+  IconExpandMore,
+  IconInfo,
   IconProgress,
+  IconRefresh,
   IconRemove,
   IconSchema,
   IconSettings,
@@ -60,15 +66,32 @@ type PersistedState = {
   pill_mode: boolean;
 };
 
+function formatSchemaAge(extractedAt: number): string {
+  const diff = Math.floor(Date.now() / 1000) - extractedAt;
+  const days = Math.floor(diff / 86400);
+  const hours = Math.floor(diff / 3600);
+  const minutes = Math.floor(diff / 60);
+  if (days > 0) return `extracted ${days} day${days === 1 ? "" : "s"} ago`;
+  if (hours > 0) return `extracted ${hours} hour${hours === 1 ? "" : "s"} ago`;
+  if (minutes > 0) return `extracted ${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  return "extracted just now";
+}
+
 export function Widget() {
   const [state, setState] = useState<WidgetState>({ kind: "default" });
   const [pillMode, setPillMode] = useState(false);
   const [question, setQuestion] = useState("");
   const [profile, setProfile] = useState<ConnectionProfile | null>(null);
+  const [allProfiles, setAllProfiles] = useState<ConnectionProfile[]>([]);
   const [provider, setProvider] = useState<ProviderConfig | null>(null);
   const [registry, setRegistry] = useState<ModelRegistry | null>(null);
   const [schema, setSchema] = useState<SchemaModel | null>(null);
+  const [schemaAges, setSchemaAges] = useState<Record<string, number | null>>({});
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [sqlIsStale, setSqlIsStale] = useState(false);
+  const [refreshingIds, setRefreshingIds] = useState<Set<string>>(new Set());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const pickerRef = useRef<HTMLDivElement>(null);
 
   // Initial load + restore.
   useEffect(() => {
@@ -84,19 +107,26 @@ export function Widget() {
           // Ignore — position restoration is best-effort across monitor changes.
         }
       }
-      // Window size is applied from Rust (lib.rs::apply_widget_size_from_store)
-      // before the window is shown, so the dimensions are already correct
-      // by the time React mounts. No JS-side setSize needed.
 
       const reg = await invoke<ModelRegistry>("get_model_registry");
       setRegistry(reg);
 
-      const profiles = await invoke<ConnectionProfile[]>("list_connection_profiles");
-      const active = profiles[0] ?? null;
+      const profileList = await invoke<ConnectionProfile[]>("list_connection_profiles");
+      setAllProfiles(profileList);
+      const active = profileList[0] ?? null;
       setProfile(active);
 
       const activeProvider = await invoke<ProviderConfig | null>("get_active_provider");
       setProvider(activeProvider);
+
+      // Load schema ages for all profiles (lightweight — only the timestamp).
+      const ages: Record<string, number | null> = {};
+      for (const p of profileList) {
+        ages[p.id] = await invoke<number | null>("get_schema_extracted_at", {
+          connectionId: p.id,
+        });
+      }
+      setSchemaAges(ages);
 
       if (active) {
         const fresh = await invoke<SchemaModel | null>("get_persisted_schema", {
@@ -130,7 +160,7 @@ export function Widget() {
     })();
   }, []);
 
-  // Autofocus textarea on every visibility change (hotkey re-summon, expand from pill).
+  // Autofocus textarea on every visibility change.
   useEffect(() => {
     if (pillMode) return;
     const win = getCurrentWindow();
@@ -174,20 +204,33 @@ export function Widget() {
     return () => unlisten?.();
   }, []);
 
-  // Esc to dismiss back to tray.
+  // Esc: close the picker if open, otherwise dismiss to tray.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        void invoke("hide_widget");
+        if (pickerOpen) {
+          setPickerOpen(false);
+        } else {
+          void invoke("hide_widget");
+        }
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, []);
+  }, [pickerOpen]);
 
-  // Note: window resize lives in Rust (lib.rs::apply_widget_size). The
-  // set_widget_pill_mode command resizes the window after persisting the
-  // mode, so JS doesn't need to round-trip through the window plugin.
+  // Close picker on click outside.
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setPickerOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [pickerOpen]);
+
   async function collapseToPill() {
     await invoke("set_widget_pill_mode", { pillMode: true });
     setPillMode(true);
@@ -207,8 +250,66 @@ export function Widget() {
     await invoke("show_main_window");
   }
 
+  async function switchConnection(newProfile: ConnectionProfile) {
+    setPickerOpen(false);
+    if (newProfile.id === profile?.id) return;
+
+    // Mark current SQL stale before switching away.
+    const hadSql = state.kind === "generated" || state.kind === "validation_error";
+
+    setProfile(newProfile);
+
+    const fresh = await invoke<SchemaModel | null>("get_persisted_schema", {
+      connectionId: newProfile.id,
+    });
+    setSchema(fresh);
+
+    if (!fresh) {
+      setSqlIsStale(false);
+      setState({ kind: "empty_no_schema" });
+    } else {
+      if (hadSql) {
+        setSqlIsStale(true);
+        // Keep the current state (generated/validation_error) so the stale
+        // SQL remains visible with the "from previous connection" label.
+      } else {
+        setSqlIsStale(false);
+        setState({ kind: "default" });
+      }
+    }
+  }
+
+  async function refreshSchema(profileId: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    setRefreshingIds((prev) => new Set(prev).add(profileId));
+    try {
+      await invoke("extract_schema", { connectionId: profileId });
+      const now = Math.floor(Date.now() / 1000);
+      setSchemaAges((prev) => ({ ...prev, [profileId]: now }));
+      // If this is the active connection, also refresh the loaded schema.
+      if (profileId === profile?.id) {
+        const fresh = await invoke<SchemaModel | null>("get_persisted_schema", {
+          connectionId: profileId,
+        });
+        setSchema(fresh);
+        if (fresh && state.kind === "empty_no_schema") {
+          setState({ kind: "default" });
+        }
+      }
+    } catch {
+      // Silently ignore — the stale badge remains; user can retry.
+    } finally {
+      setRefreshingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(profileId);
+        return next;
+      });
+    }
+  }
+
   async function generate() {
     if (!profile || !question.trim()) return;
+    setSqlIsStale(false);
     const start = performance.now();
     setState({ kind: "generating" });
     try {
@@ -267,7 +368,7 @@ export function Widget() {
     }
   }
 
-  // ---- derived display values (used by both pill and expanded) ----
+  // ---- derived display values ----
 
   const tableCount = schema
     ? schema.schemas.reduce(
@@ -276,11 +377,13 @@ export function Widget() {
       )
     : 0;
   const firstSchemaName = schema?.schemas[0]?.name ?? "";
-  const modelDisplay = registry && provider
-    ? registry.providers
-        .find((p) => p.kind === provider.kind)
-        ?.models.find((m) => m.id === provider.model)?.name ?? provider.model
-    : "";
+  const modelDisplay =
+    registry && provider
+      ? registry.providers
+          .find((p) => p.kind === provider.kind)
+          ?.models.find((m) => m.id === provider.model)?.name ?? provider.model
+      : "";
+  const multipleProfiles = allProfiles.length > 1;
 
   // ---- pill render ----
 
@@ -325,7 +428,28 @@ export function Widget() {
       <div className="widget-header">
         <div className="widget-header-left">
           <span className={`status-dot ${dotClass}`} />
-          {noSchema ? (
+
+          {multipleProfiles ? (
+            // Connection picker button — replaces the static context label.
+            <div ref={pickerRef} style={{ display: "contents" }}>
+              <button
+                className={`conn-picker-btn${pickerOpen ? " open" : ""}`}
+                onClick={() => setPickerOpen((o) => !o)}
+                title="Switch connection"
+              >
+                <span className="conn-picker-name">
+                  {noSchema && !profile ? "no connection" : (profile?.name ?? "no connection")}
+                </span>
+                {pickerOpen ? <IconExpandLess /> : <IconExpandMore />}
+              </button>
+              {modelDisplay && (
+                <span className="context-label">
+                  <span className="sep">·</span>
+                  <span className="model">{modelDisplay}</span>
+                </span>
+              )}
+            </div>
+          ) : noSchema ? (
             <span className="context-label dim">no schema loaded</span>
           ) : (
             <span className="context-label">
@@ -363,6 +487,52 @@ export function Widget() {
           </button>
         </div>
       </div>
+
+      {/* Connection picker dropdown — overlays the body when open */}
+      {pickerOpen && multipleProfiles && (
+        <div className="conn-menu" ref={pickerRef}>
+          {allProfiles.map((p) => {
+            const isActive = p.id === profile?.id;
+            const age = schemaAges[p.id];
+            const hasSchema = age !== null && age !== undefined;
+            const isStale = hasSchema && Math.floor(Date.now() / 1000) - age! > 7 * 86400;
+            const isRefreshing = refreshingIds.has(p.id);
+
+            return (
+              <div
+                key={p.id}
+                className={`conn-menu-item${isActive ? " active" : ""}`}
+                onClick={() => void switchConnection(p)}
+              >
+                <div className="conn-menu-item-info">
+                  <div className={`conn-item-name${!hasSchema ? " dim" : ""}`}>
+                    {p.name}
+                  </div>
+                  <div
+                    className={`conn-item-age${isStale ? " stale" : ""}${!hasSchema ? " italic" : ""}`}
+                  >
+                    {hasSchema ? formatSchemaAge(age!) : "no schema yet"}
+                  </div>
+                </div>
+                {isActive && <IconCheck className="conn-item-check" size={14} />}
+                {isStale && !isActive && (
+                  <button
+                    className="conn-refresh-btn"
+                    title={`Refresh ${p.name} schema`}
+                    onClick={(e) => void refreshSchema(p.id, e)}
+                  >
+                    {isRefreshing ? (
+                      <IconProgress className="spin" />
+                    ) : (
+                      <IconRefresh />
+                    )}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {noSchema ? (
         <div className="widget-body">
@@ -446,10 +616,16 @@ export function Widget() {
                     ? state.sql
                     : ""
                 }
-                disabled={state.kind !== "generated"}
+                disabled={state.kind !== "generated" || sqlIsStale}
               />
             </div>
-            <CodeBlock state={state} />
+            {sqlIsStale && (
+              <div className="stale-sql-notice">
+                <IconInfo />
+                from previous connection
+              </div>
+            )}
+            <CodeBlock state={state} stale={sqlIsStale} />
           </div>
         </div>
       )}
@@ -466,7 +642,7 @@ export function Widget() {
 
 // -------- subcomponents --------
 
-function CodeBlock({ state }: { state: WidgetState }) {
+function CodeBlock({ state, stale }: { state: WidgetState; stale: boolean }) {
   if (state.kind === "default") {
     return (
       <div className="code-block empty">
@@ -487,7 +663,15 @@ function CodeBlock({ state }: { state: WidgetState }) {
   // generated or validation_error
   const tokens = state.sql ? tokenize(state.sql) : [];
   return (
-    <div className={`code-block ${state.kind === "validation_error" ? "greyed" : ""}`}>
+    <div
+      className={[
+        "code-block",
+        state.kind === "validation_error" ? "greyed" : "",
+        stale ? "stale" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       {tokens.map((t, i) => (
         <span key={i} className={`tok-${t.kind}`}>
           {t.text}

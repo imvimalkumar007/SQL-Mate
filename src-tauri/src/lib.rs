@@ -164,6 +164,7 @@ pub fn run() {
             commands::delete_connection_profile,
             commands::test_connection,
             commands::extract_schema,
+            commands::get_schema_extracted_at,
             commands::get_persisted_schema,
             commands::embed_schema,
             commands::clear_schema_embeddings,
