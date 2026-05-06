@@ -390,6 +390,99 @@
     align-items: center;
   }
 
+  /* Connection picker */
+  .conn-picker-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    padding: 2px 5px;
+    border-radius: 4px;
+    letter-spacing: 0.01em;
+    transition: background 0.12s, color 0.12s;
+  }
+  .conn-picker-btn:hover,
+  .conn-picker-btn--open {
+    background: var(--surface-3);
+    color: var(--text);
+  }
+  .conn-picker-btn .material-symbols-outlined {
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+
+  .conn-menu {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+    width: 400px;
+  }
+  .conn-menu-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-soft);
+    cursor: pointer;
+    gap: 8px;
+    transition: background 0.1s;
+  }
+  .conn-menu-item:last-child { border-bottom: none; }
+  .conn-menu-item:hover { background: var(--surface-3); }
+  .conn-menu-item--active { background: var(--surface-2); }
+  .conn-menu-item-info { flex: 1; }
+  .conn-name {
+    font-size: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text);
+    margin-bottom: 3px;
+  }
+  .conn-name--dim { color: var(--text-dim); }
+  .conn-age {
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-dim);
+  }
+  .conn-age--stale { color: var(--danger); }
+  .conn-check {
+    font-size: 14px !important;
+    color: var(--primary);
+    flex-shrink: 0;
+  }
+  .conn-refresh-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    padding: 3px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    transition: color 0.12s, background 0.12s;
+  }
+  .conn-refresh-btn:hover { color: var(--primary); background: var(--surface-3); }
+  .conn-refresh-btn .material-symbols-outlined { font-size: 16px; }
+
+  /* Stale SQL — after connection switch */
+  .stale-sql-notice {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-dim);
+    margin-bottom: 5px;
+  }
+  .stale-sql-notice .material-symbols-outlined { font-size: 12px; }
+  .code-block--stale { opacity: 0.45; }
+
 </style>
 </head>
 <body>
@@ -650,6 +743,153 @@
   <div class="widget-footer">
     <div class="footer-left">
       <span class="footer-stat">setup needed</span>
+    </div>
+    <span class="footer-stat">⌘K to dismiss</span>
+  </div>
+</div>
+
+
+<div class="stage-label" style="margin-top: 16px;">Stage 7 — connection picker open (opens upward; widget in lower screen half)</div>
+<div style="position: relative; display: inline-block; padding-top: 172px;">
+  <!-- Floating connection menu positioned above the widget header -->
+  <div class="conn-menu" style="position: absolute; top: 0; left: 0;">
+    <div class="conn-menu-item conn-menu-item--active">
+      <div class="conn-menu-item-info">
+        <div class="conn-name">analytics_warehouse</div>
+        <div class="conn-age">extracted 2 days ago</div>
+      </div>
+      <span class="material-symbols-outlined conn-check">check</span>
+    </div>
+    <div class="conn-menu-item">
+      <div class="conn-menu-item-info">
+        <div class="conn-name">staging_db</div>
+        <div class="conn-age conn-age--stale">extracted 9 days ago</div>
+      </div>
+      <button class="conn-refresh-btn" title="Refresh staging_db schema">
+        <span class="material-symbols-outlined">refresh</span>
+      </button>
+    </div>
+    <div class="conn-menu-item">
+      <div class="conn-menu-item-info">
+        <div class="conn-name conn-name--dim">dev_reporting</div>
+        <div class="conn-age" style="font-style: italic;">no schema yet</div>
+      </div>
+    </div>
+  </div>
+  <div class="widget">
+    <div class="widget-header">
+      <div class="widget-header-left">
+        <span class="status-dot"></span>
+        <button class="conn-picker-btn conn-picker-btn--open">analytics_warehouse<span class="material-symbols-outlined">expand_less</span></button>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dim); margin: 0 5px;">·</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--primary);">Sonnet 4.6</span>
+      </div>
+      <div class="widget-header-right">
+        <button class="icon-btn"><span class="material-symbols-outlined">remove</span></button>
+        <button class="icon-btn"><span class="material-symbols-outlined">settings</span></button>
+        <button class="icon-btn"><span class="material-symbols-outlined">close</span></button>
+      </div>
+    </div>
+    <div class="widget-body">
+      <label class="field-label">Ask</label>
+      <textarea class="question-input">monthly active users by subscription tier last quarter, only paid plans</textarea>
+      <div class="action-row">
+        <span class="schema-pill">
+          <span class="material-symbols-outlined">schema</span>
+          public · 24 tables
+        </span>
+        <button class="generate-btn">
+          Generate
+          <span class="shortcut">⌘↵</span>
+        </button>
+      </div>
+      <div class="output-section">
+        <div class="output-header">
+          <label class="field-label" style="margin-bottom: 0;">SQL</label>
+          <button class="copy-btn">
+            <span class="material-symbols-outlined">content_copy</span>
+            Copy
+          </button>
+        </div>
+        <div class="code-block"><span class="kw">SELECT</span>
+  date_trunc(<span class="str">'month'</span>, u.signup_date) <span class="kw">AS</span> month,
+  sp.tier_name,
+  <span class="fn">COUNT</span>(<span class="kw">DISTINCT</span> u.id) <span class="kw">AS</span> active_users
+<span class="kw">FROM</span> users u
+<span class="kw">JOIN</span> subscriptions s <span class="kw">ON</span> s.user_id = u.id
+<span class="kw">JOIN</span> subscription_plans sp <span class="kw">ON</span> sp.id = s.plan_id
+<span class="kw">WHERE</span> s.status = <span class="str">'active'</span>
+  <span class="kw">AND</span> sp.is_paid = <span class="kw">true</span>
+  <span class="kw">AND</span> u.signup_date &gt;= now() - <span class="kw">interval</span> <span class="str">'3 months'</span>
+<span class="kw">GROUP BY</span> <span class="str">1</span>, <span class="str">2</span>
+<span class="kw">ORDER BY</span> <span class="str">1</span> <span class="kw">DESC</span>, active_users <span class="kw">DESC</span>;</div>
+      </div>
+    </div>
+    <div class="widget-footer">
+      <div class="footer-left">
+        <span class="footer-stat"><span class="material-symbols-outlined">speed</span>1.2s</span>
+        <span class="footer-stat"><span class="material-symbols-outlined">token</span>428 tok</span>
+      </div>
+      <span class="footer-stat" style="color: #6cba6c;">
+        <span class="material-symbols-outlined" style="font-size: 12px;">check_circle</span>validated
+      </span>
+    </div>
+  </div>
+</div>
+
+<div class="stage-label" style="margin-top: 16px;">Stage 8 — after connection switch (SQL stale, schema pill updated, textarea preserved)</div>
+<div class="widget">
+  <div class="widget-header">
+    <div class="widget-header-left">
+      <span class="status-dot"></span>
+      <button class="conn-picker-btn">staging_db<span class="material-symbols-outlined">expand_more</span></button>
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dim); margin: 0 5px;">·</span>
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--primary);">Sonnet 4.6</span>
+    </div>
+    <div class="widget-header-right">
+      <button class="icon-btn"><span class="material-symbols-outlined">remove</span></button>
+      <button class="icon-btn"><span class="material-symbols-outlined">settings</span></button>
+      <button class="icon-btn"><span class="material-symbols-outlined">close</span></button>
+    </div>
+  </div>
+  <div class="widget-body">
+    <label class="field-label">Ask</label>
+    <textarea class="question-input">monthly active users by subscription tier last quarter, only paid plans</textarea>
+    <div class="action-row">
+      <span class="schema-pill">
+        <span class="material-symbols-outlined">schema</span>
+        staging · 18 tables
+      </span>
+      <button class="generate-btn">
+        Generate
+        <span class="shortcut">⌘↵</span>
+      </button>
+    </div>
+    <div class="output-section">
+      <div class="output-header">
+        <label class="field-label" style="margin-bottom: 0;">SQL</label>
+      </div>
+      <div class="stale-sql-notice">
+        <span class="material-symbols-outlined">info</span>
+        from previous connection
+      </div>
+      <div class="code-block code-block--stale"><span class="kw">SELECT</span>
+  date_trunc(<span class="str">'month'</span>, u.signup_date) <span class="kw">AS</span> month,
+  sp.tier_name,
+  <span class="fn">COUNT</span>(<span class="kw">DISTINCT</span> u.id) <span class="kw">AS</span> active_users
+<span class="kw">FROM</span> users u
+<span class="kw">JOIN</span> subscriptions s <span class="kw">ON</span> s.user_id = u.id
+<span class="kw">JOIN</span> subscription_plans sp <span class="kw">ON</span> sp.id = s.plan_id
+<span class="kw">WHERE</span> s.status = <span class="str">'active'</span>
+  <span class="kw">AND</span> sp.is_paid = <span class="kw">true</span>
+  <span class="kw">AND</span> u.signup_date &gt;= now() - <span class="kw">interval</span> <span class="str">'3 months'</span>
+<span class="kw">GROUP BY</span> <span class="str">1</span>, <span class="str">2</span>
+<span class="kw">ORDER BY</span> <span class="str">1</span> <span class="kw">DESC</span>, active_users <span class="kw">DESC</span>;</div>
+    </div>
+  </div>
+  <div class="widget-footer">
+    <div class="footer-left">
+      <span class="footer-stat">ready</span>
     </div>
     <span class="footer-stat">⌘K to dismiss</span>
   </div>

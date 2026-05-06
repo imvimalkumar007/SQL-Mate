@@ -67,7 +67,7 @@ spec.
 
 ## States
 
-Six distinct states, all rendered in the prototype:
+Eight distinct states, all rendered in the prototype:
 
 1. **Default** — schema loaded, no question yet. Empty textarea
    with placeholder, code block shows "SQL appears here after
@@ -92,6 +92,80 @@ Six distinct states, all rendered in the prototype:
 6. **Pill (collapsed)** — the entire widget collapses to a 220×30
    pill showing status dot, connection name, model name, and a
    chevron. Click to expand back to the widget.
+7. **Connection picker open** — the picker in the header is open,
+   showing all configured connections in a floating menu above (or
+   below) the header. The active connection has a check mark. Stale
+   connections (schema > 7 days old) show the age in `--danger` and
+   a refresh icon. Connections with no cached schema appear dimmed
+   and labelled "no schema yet."
+8. **After connection switch** — a new connection has been selected.
+   The header context label and schema pill reflect the new
+   connection. Any previously generated SQL is greyed out
+   (`opacity: 0.45`) with a "from previous connection" label in dim
+   10px JetBrains Mono above the code block. The question textarea
+   is unchanged. The Generate button is ready.
+
+## Connection picker
+
+Replaces the static connection name in the header context label.
+Present whenever more than one connection profile is configured.
+
+### Placement
+
+The connection name portion of the header context label becomes a
+picker button. The status dot remains to its left; the separator
+and model name remain to its right. The picker button is the only
+non-drag zone in the header.
+
+### Collapsed appearance
+
+- Connection name in `--text-muted`, 11px JetBrains Mono
+- `expand_more` chevron (13px, `--text-dim`) immediately to the
+  right of the name
+- Hover: `--surface-3` background, 4px border-radius, text to `--text`
+- Open state: same as hover; chevron flips to `expand_less`
+
+### Expanded floating menu
+
+- Width: 400px (matches widget); anchors to widget left edge
+- Opens **upward** when the widget's top edge is below the screen's
+  vertical midpoint; opens **downward** otherwise
+- Background: `--surface`; border: 1px `--border`; border-radius:
+  8px; box-shadow: `0 8px 24px rgba(0,0,0,0.5)`
+- Each row: connection name (12px JetBrains Mono, `--text`) on
+  line 1, schema age (10px JetBrains Mono, `--text-dim`) on line 2;
+  10px padding top and bottom, 12px left and right
+- Active connection: `--surface-2` background; `check` icon (14px,
+  `--primary`) on the right
+- Rows separated by 1px `--border-soft` dividers; hover `--surface-3`
+
+### Stale schema affordance (schema > 7 days old)
+
+- Schema age text in `--danger` instead of `--text-dim`
+- `refresh` icon button (16px) on the right; `--text-dim` default,
+  `--primary` on hover
+- Clicking the icon triggers metadata extraction without closing
+  the menu; the widget never auto-refreshes schema
+
+### "No schema yet" state
+
+- Connection name in `--text-dim`; schema age line reads "no schema
+  yet" in `--text-dim`, italic; no refresh affordance
+- Selecting the row does not switch the connection; the menu closes
+  and a notice appears above the Generate button: "Extract this
+  connection's schema in the main window before asking questions."
+
+### Connection-switch state transitions
+
+On selecting a connection with a cached schema:
+
+1. Menu closes; header context label updates to the new connection name
+2. Schema pill updates to the new connection's schema summary
+3. Displayed SQL greys out (`opacity: 0.45`); "from previous
+   connection" label (10px JetBrains Mono, `--text-dim`) appears
+   above the code block
+4. Question textarea content is preserved
+5. Generate button is enabled, ready for the next question
 
 ## Interaction details
 
@@ -123,7 +197,7 @@ Six distinct states, all rendered in the prototype:
 
 ## Reference prototype
 
-Open `docs/design/widget-prototype.html` in a browser. All six
+Open `docs/design/widget-prototype.html` in a browser. All eight
 states are rendered there at actual size. When making any UI
 change, update both this spec and the prototype together so they
 remain consistent.
