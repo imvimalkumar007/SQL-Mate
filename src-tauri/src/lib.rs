@@ -207,6 +207,11 @@ pub fn run() {
             commands::set_autostart_enabled,
             commands::rotate_db_key,
             commands::clamp_widget_to_visible_monitor,
+            commands::get_session_context_enabled,
+            commands::set_session_context_enabled,
+            commands::get_followup_suggestions_enabled,
+            commands::set_followup_suggestions_enabled,
+            commands::get_followup_suggestions,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

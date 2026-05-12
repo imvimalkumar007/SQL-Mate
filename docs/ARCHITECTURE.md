@@ -119,15 +119,17 @@ Both the live extractor and any future file-based ingestion produce this shape. 
 4. Core retrieves the relevant schema slice. For schemas with under ~50 tables this is "all of it." For larger schemas, an embedding-based retriever picks the top N tables by similarity, then expands to include their foreign-key neighbors.
 5. Core obfuscates sensitive column names with stable placeholders (`r_c_1`, `r_c_2`, …) — the LLM never sees the real names.
 6. Core composes the prompt: system message + (post-redaction, post-obfuscation) schema slice + question.
-7. Core reads the API key from the SQLCipher store (keychain pending ADR 0008).
-8. Core captures the exact bytes about to go out into the in-memory request log (last-request-per-connection, accessible from the UI for audit).
-9. Core sends the request to the configured provider.
-10. Response is parsed for the SQL query.
-11. Core de-obfuscates the response (substitutes original column names back).
-12. Core writes a row to the `history` table (question, generated SQL, validation status pending).
-13. SQL is returned to the frontend with the originating model id. UI renders it with syntax highlighting + a copy button.
-14. UI invokes `validate_sql` against the Python sidecar; the row in `history` is updated with valid / invalid.
-15. If validation passes, the user copies the SQL and runs it in their own tool. If it fails, the user sees a structured error.
+7. Core reads the API key from the SQLCipher store (Windows: Windows Credential Manager via ADR 0016).
+8. If the user has enabled **session context** (opt-in, off by default — ADR 0017), the frontend has passed the last ≤5 Q+SQL pairs from the current session; the backend prepends them as a `<previous_turns>` block in the user message. No row data is involved; all turns are schema-derived.
+9. Core captures the exact bytes about to go out into the in-memory request log (last-request-per-connection, accessible from the UI for audit).
+10. Core sends the request to the configured provider.
+11. Response is parsed for the SQL query.
+12. Core de-obfuscates the response (substitutes original column names back).
+13. Core writes a row to the `history` table (question, generated SQL, validation status pending).
+14. SQL is returned to the frontend with the originating model id. UI renders it with syntax highlighting + a copy button.
+15. UI invokes `validate_sql` against the Python sidecar; the row in `history` is updated with valid / invalid.
+16. If validation passes, the user copies the SQL and runs it in their own tool. If it fails, the user sees a structured error.
+17. If the user has enabled **follow-up suggestions** (opt-in, off by default — ADR 0017), the frontend calls `get_followup_suggestions` which makes a second lightweight LLM call (max 256 tokens) and returns 3 suggested next questions as clickable chips. This call is independent of the generation call; if it fails or the feature is off, the SQL result is unaffected.
 
 ## Threading model
 

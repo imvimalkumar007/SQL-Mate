@@ -6,7 +6,7 @@ This document is the source of truth for the security claims we make to users. A
 
 These are claims we make and that the architecture structurally enforces. A user's security team should be able to verify each of these by reading our code, our network calls, and our local file writes.
 
-1. **Row data from your database never leaves your machine.** Not to the LLM provider, not to us, not to anywhere. The LLM call path receives only schema metadata (table and column names, types, keys, user-written descriptions). Query results are displayed locally and stored locally, never transmitted.
+1. **Row data from your database never leaves your machine.** Not to the LLM provider, not to us, not to anywhere. The LLM call path receives only schema metadata (table and column names, types, keys, user-written descriptions) and — when session context is enabled (opt-in, off by default) — previous Q+SQL pairs from the current session. Query results are displayed locally and stored locally, never transmitted.
 2. **We are not in the data path.** The application makes its LLM calls directly from your machine to the provider you configured, using the API key you provided. We do not proxy. We do not have a server. We could not see your data even if we wanted to.
 3. **Generated SQL is read-only by construction.** Every query we generate is parsed and validated for read-only operations before you see it. The validator rejects any query that mutates state. This is enforced at the application layer; we recommend you also use database credentials that are read-only at the database layer.
 4. **The app does not execute generated SQL.** As of the Phase 9 UX overhaul we removed the run-query path entirely. The app produces validated SQL and you copy it into your own tool to run. This is a stronger posture than "auto-execute disabled" — there is simply no execution code path inside the app.
@@ -30,6 +30,8 @@ These are the threats we design against, in priority order.
 **Scenario:** Row data from a sensitive column ends up in the LLM request because the application sent it deliberately or accidentally.
 
 **Mitigation:** No code path inside the application reads row data into the LLM request. The schema model has no field for sample values. Tests assert that the LLM request payload contains only schema metadata. If sample-value awareness is ever added in a future version, it must go through a separate, opt-in code path with its own user confirmation.
+
+**Session context note (ADR 0017):** When the opt-in "session context" feature is enabled, the last ≤5 Q+SQL pairs from the current session are also included in the LLM request. These are schema-derived (the same content already sent in previous calls) — no row data is ever involved. The feature is off by default and labelled clearly in Settings. When enabled, the request log entry shows the full prompt including prior turns.
 
 ### T2: Destructive SQL executed against the user's database
 
