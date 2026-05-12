@@ -674,3 +674,74 @@ button.link-danger:hover { color: var(--danger); background: transparent; filter
   font-size: 0.78rem;
   font-style: italic;
 }
+
+/* ── Ask header + feature toggles ──────────────────────────── */
+.ask-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.ask-header h2 { margin: 0; }
+
+.feature-toggles {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.feature-toggle {
+  background: var(--surface-3);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0.2rem 0.65rem;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.feature-toggle:hover {
+  background: var(--surface-4);
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+.feature-toggle.on {
+  background: color-mix(in srgb, var(--primary) 15%, transparent);
+  border-color: var(--primary-dim);
+  color: var(--primary);
+}
+
+/* ── History dialog ─────────────────────────────────────────── */
+.app-dialog--wide { max-width: 760px; width: 90vw; }
+
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.history-list-item {
+  border-bottom: 1px solid var(--border-soft);
+  padding-bottom: 1.25rem;
+}
+.history-list-item:last-child { border-bottom: none; padding-bottom: 0; }
+
+.history-list-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+
+.history-list-question {
+  font-size: 0.9rem;
+  color: var(--text);
+  margin-bottom: 0.4rem;
+}
