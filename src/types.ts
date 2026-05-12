@@ -1,58 +1,65 @@
 // TypeScript mirrors of the Rust types we send across the Tauri boundary.
 // Kept here so components import a single source of truth.
 
+// prettier-ignore
 export type ConnectionProfile = {
-  id: string;
-  name: string;
-  dialect: string;
-  host: string;
-  port: number;
+  id:            string;
+  name:          string;
+  dialect:       string;
+  host:          string;
+  port:          number;
   database_name: string;
-  username: string;
+  username:      string;
   // password is on the Rust side (#[serde(skip_serializing)]); never reaches the frontend.
-  created_at: number;
-  last_used_at: number | null;
+  created_at:    number;
+  last_used_at:  number | null;
 };
 
+// prettier-ignore
 export type SchemaModel = {
-  dialect: string;
-  schemas: DbSchema[];
+  dialect:      string;
+  schemas:      DbSchema[];
   extracted_at: number;
-  source: { kind: string; connection_id?: string };
+  source:       { kind: string; connection_id?: string };
 };
 
+// prettier-ignore
 export type DbSchema = {
-  name: string;
+  name:   string;
   tables: Table[];
 };
 
+// prettier-ignore
 export type Table = {
-  name: string;
-  columns: Column[];
-  primary_key: string[];
-  foreign_keys: ForeignKey[];
+  name:            string;
+  columns:         Column[];
+  primary_key:     string[];
+  foreign_keys:    ForeignKey[];
   user_annotation: string | null;
-  excluded: boolean;
+  excluded:        boolean;
 };
 
+// prettier-ignore
 export type Column = {
-  name: string;
-  data_type: string;
-  nullable: boolean;
-  default: string | null;
+  name:            string;
+  data_type:       string;
+  nullable:        boolean;
+  default:         string | null;
   user_annotation: string | null;
-  sensitive: boolean;
+  sensitive:       boolean;
 };
 
+// prettier-ignore
 export type ForeignKey = {
-  columns: string[];
-  references_schema: string;
-  references_table: string;
+  columns:            string[];
+  references_schema:  string;
+  references_table:   string;
   references_columns: string[];
 };
 
+// prettier-ignore
 export type ValidatedSql = {
-  sql: string;
+  sql:               string;
   referenced_tables: string[];
 };
 
@@ -61,92 +68,109 @@ export type ValidatedSql = {
 
 export type ProviderKind = "anthropic" | "openai" | "openai_compatible";
 
+// prettier-ignore
 export type ProviderConfig = {
-  id: string;
-  name: string;
-  kind: ProviderKind;
-  base_url: string;
-  model: string;
+  id:         string;
+  name:       string;
+  kind:       ProviderKind;
+  base_url:   string;
+  model:      string;
   // api_key never reaches the frontend (#[serde(skip_serializing)] on the Rust side).
   created_at: number;
 };
 
 export type CostTier = "low" | "mid" | "high";
 
+// prettier-ignore
 export type ModelRegistryModel = {
-  id: string;
-  name: string;
-  context_window: number;
-  supports_caching: boolean;
+  id:                         string;
+  name:                       string;
+  context_window:             number;
+  supports_caching:           boolean;
   supports_structured_output: boolean;
-  cost_tier: CostTier;
-  recommended_for?: string;
+  cost_tier:                  CostTier;
+  recommended_for?:           string;
 };
 
+// prettier-ignore
 export type ModelRegistryProvider = {
-  id: string;
-  name: string;
-  kind: ProviderKind;
+  id:               string;
+  name:             string;
+  kind:             ProviderKind;
   default_base_url: string;
-  models: ModelRegistryModel[];
-  retention_note: string;
+  models:           ModelRegistryModel[];
+  retention_note:   string;
 };
 
+// prettier-ignore
 export type ModelRegistry = {
-  version: number;
+  version:   number;
   providers: ModelRegistryProvider[];
 };
 
+// prettier-ignore
 export type EmbeddingStats = {
-  total_tables: number;
-  embedded_count: number;
-  model: string | null;
-  embedded_at: number | null;
+  total_tables:        number;
+  embedded_count:      number;
+  model:               string | null;
+  embedded_at:         number | null;
   retrieval_threshold: number;
-  retrieval_top_n: number;
+  retrieval_top_n:     number;
 };
 
+// prettier-ignore
 export type GenerationResult = {
-  sql: string;
+  sql:        string;
   history_id: string;
-  model: string;
+  model:      string;
 };
 
-export type HistoryEntry = {
-  id: string;
-  connection_id: string;
-  asked_at: number;
+/** A single Q+SQL turn passed to generate_sql when session context is on (ADR 0017). */
+// prettier-ignore
+export type SessionTurn = {
   question: string;
-  generated_sql: string | null;
-  validation_status: string;
-  validation_error: string | null;
-  was_executed: boolean;
-  execution_row_count: number | null;
+  sql:      string;
+};
+
+// prettier-ignore
+export type HistoryEntry = {
+  id:                    string;
+  connection_id:         string;
+  asked_at:              number;
+  question:              string;
+  generated_sql:         string | null;
+  validation_status:     string;
+  validation_error:      string | null;
+  was_executed:          boolean;
+  execution_row_count:   number | null;
   execution_duration_ms: number | null;
 };
 
+// prettier-ignore
 export type Annotation = {
   connection_id: string;
-  schema_name: string;
-  table_name: string;
-  column_name: string | null;
-  annotation: string;
+  schema_name:   string;
+  table_name:    string;
+  column_name:   string | null;
+  annotation:    string;
 };
 
+// prettier-ignore
 export type Redaction = {
   connection_id: string;
-  schema_name: string;
-  table_name: string;
-  column_name: string | null;
-  kind: "excluded" | "sensitive";
+  schema_name:   string;
+  table_name:    string;
+  column_name:   string | null;
+  kind:          "excluded" | "sensitive";
 };
 
+// prettier-ignore
 export type RequestLogEntry = {
-  timestamp: number;
-  model: string;
-  provider_kind: string;
-  system_prompt: string;
-  user_message: string;
+  timestamp:          number;
+  model:              string;
+  provider_kind:      string;
+  system_prompt:      string;
+  user_message:       string;
   obfuscated_columns: number;
-  excluded_tables: string[];
+  excluded_tables:    string[];
 };

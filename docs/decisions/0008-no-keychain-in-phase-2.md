@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted, with explicit revisit in Phase 7.
+Superseded by **ADR 0016** (OS keychain for SQLCipher key via Win32 Credential
+Manager). The Windows keychain integration originally deferred here was
+implemented during Phase 12 security hardening. The historical record below is
+kept for context.
 
 ## Context
 

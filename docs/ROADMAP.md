@@ -116,6 +116,13 @@ Get five target users (regulated mid-market data engineers) using the app weekly
 
 **Done when:** Five users have used the app every week for four consecutive weeks. We have written notes on the top three friction points from each.
 
+What shipped during Phase 12 iterations (before first external users):
+
+- **Security hardening.** `cipher_memory_security = ON` (SQLCipher zeros pages before freeing), `zeroize` crate wraps the 32-byte key so it is wiped from memory on drop, write-access detection on test-connection (warns the user if their DB role has INSERT/UPDATE/DELETE grants).
+- **OS keychain for the SQLCipher key (ADR 0016).** On Windows the 32-byte key moved from a file sitting next to the encrypted store into Windows Credential Manager (DPAPI-encrypted per user, `CredWriteW`/`CredReadW` via `windows-sys`). Existing installs migrate automatically on first launch after upgrade — no user action required.
+- **Opt-in session context and follow-up suggestions (ADR 0017).** Two independently toggleable settings (both off by default). Session context sends the last ≤5 Q+SQL pairs from the current session alongside the next question so users can ask natural follow-ups. Follow-up suggestions fires a second lightweight LLM call after each generation and renders 3 clickable question chips. Both are clearly labelled opt-in so users with conservative postures know what goes to the provider.
+- **One-click update launcher.** `update.bat` in the project root rebuilds from source (handles Strawberry Perl PATH), closes the running app, and launches the NSIS installer — replaces the manual PowerShell sequence.
+
 ## Out of scope for v1
 
 These come after phase 9 if the product has traction.

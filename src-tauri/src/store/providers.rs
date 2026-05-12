@@ -6,26 +6,28 @@ use serde::{Deserialize, Serialize};
 
 use super::{Store, StoreError};
 
+#[rustfmt::skip]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderConfig {
-    pub id: String,
-    pub name: String,
-    pub kind: String, // "anthropic" | "openai" | "openai_compatible"
-    pub base_url: String,
-    pub model: String,
+    pub id:         String,
+    pub name:       String,
+    pub kind:       String, // "anthropic" | "openai" | "openai_compatible"
+    pub base_url:   String,
+    pub model:      String,
     // api_key never reaches the frontend.
     #[serde(skip_serializing)]
-    pub api_key: String,
+    pub api_key:    String,
     pub created_at: i64,
 }
 
+#[rustfmt::skip]
 #[derive(Debug, Clone, Deserialize)]
 pub struct NewProviderConfig {
-    pub name: String,
-    pub kind: String,
+    pub name:     String,
+    pub kind:     String,
     pub base_url: String,
-    pub model: String,
-    pub api_key: String,
+    pub model:    String,
+    pub api_key:  String,
 }
 
 impl Store {

@@ -45,6 +45,7 @@ import type {
   ModelRegistry,
   ProviderConfig,
   SchemaModel,
+  SessionTurn,
   ValidatedSql,
 } from "./types";
 
@@ -90,6 +91,12 @@ export function Widget() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [sqlIsStale, setSqlIsStale] = useState(false);
   const [refreshingIds, setRefreshingIds] = useState<Set<string>>(new Set());
+  // ADR 0017: opt-in session context + follow-up suggestions
+  const [sessionContextEnabled, setSessionContextEnabled] = useState(false);
+  const [followupSuggestionsEnabled, setFollowupSuggestionsEnabled] = useState(false);
+  const [widgetSessionHistory, setWidgetSessionHistory] = useState<SessionTurn[]>([]);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
 
@@ -110,6 +117,12 @@ export function Widget() {
 
       const reg = await invoke<ModelRegistry>("get_model_registry");
       setRegistry(reg);
+
+      // ADR 0017: load opt-in settings
+      const sessionCtx = await invoke<boolean>("get_session_context_enabled");
+      setSessionContextEnabled(sessionCtx);
+      const followupSugg = await invoke<boolean>("get_followup_suggestions_enabled");
+      setFollowupSuggestionsEnabled(followupSugg);
 
       const profileList = await invoke<ConnectionProfile[]>("list_connection_profiles");
       setAllProfiles(profileList);
@@ -254,6 +267,11 @@ export function Widget() {
     setPickerOpen(false);
     if (newProfile.id === profile?.id) return;
 
+    // Reset session history on connection switch — context from a different
+    // schema is not useful and could confuse the LLM (ADR 0017).
+    setWidgetSessionHistory([]);
+    setSuggestions([]);
+
     // Mark current SQL stale before switching away.
     const hadSql = state.kind === "generated" || state.kind === "validation_error";
 
@@ -307,16 +325,36 @@ export function Widget() {
     }
   }
 
-  async function generate() {
-    if (!profile || !question.trim()) return;
+  // Accepts an optional override question so suggestion chips can fire
+  // generation immediately without waiting for setQuestion to flush (ADR 0017).
+  async function generate(overrideQuestion?: string) {
+    const q = overrideQuestion ?? question;
+    if (!profile || !q.trim()) return;
+    if (overrideQuestion) setQuestion(overrideQuestion);
     setSqlIsStale(false);
+    setSuggestions([]);
+    setSuggestionsLoading(false);
     const start = performance.now();
     setState({ kind: "generating" });
+
+    // Build session history when context is enabled (ADR 0017).
+    const historyForBackend: SessionTurn[] = sessionContextEnabled
+      ? [...widgetSessionHistory]
+      : [];
+
     try {
       const result = await invoke<GenerationResult>("generate_sql", {
         connectionId: profile.id,
-        question,
+        question: q,
+        sessionHistory: historyForBackend.length > 0 ? historyForBackend : null,
       });
+
+      // Push this turn to local session history.
+      setWidgetSessionHistory((prev) => [
+        ...prev,
+        { question: q, sql: result.sql },
+      ]);
+
       try {
         const v = await invoke<ValidatedSql>("validate_sql", {
           connectionId: profile.id,
@@ -333,13 +371,26 @@ export function Widget() {
         });
         await invoke("set_widget_last_query", {
           req: {
-            question,
+            question: q,
             sql: result.sql,
             model: result.model,
             validation_status: "valid",
             validation_error: null,
           },
         });
+
+        // Fetch follow-up suggestions in the background (ADR 0017).
+        if (followupSuggestionsEnabled) {
+          setSuggestionsLoading(true);
+          void invoke<string[]>("get_followup_suggestions", {
+            connectionId: profile.id,
+            question: q,
+            sql: result.sql,
+          })
+            .then((s) => setSuggestions(s))
+            .catch(() => setSuggestions([]))
+            .finally(() => setSuggestionsLoading(false));
+        }
       } catch (e) {
         const message = String(e);
         setState({
@@ -350,7 +401,7 @@ export function Widget() {
         });
         await invoke("set_widget_last_query", {
           req: {
-            question,
+            question: q,
             sql: result.sql,
             model: result.model,
             validation_status: "invalid",
@@ -626,6 +677,26 @@ export function Widget() {
               </div>
             )}
             <CodeBlock state={state} stale={sqlIsStale} />
+
+            {/* ADR 0017: follow-up suggestion chips */}
+            {followupSuggestionsEnabled && (suggestionsLoading || suggestions.length > 0) && (
+              <div className="suggestion-chips">
+                {suggestionsLoading && suggestions.length === 0 && (
+                  <span className="suggestions-loading">fetching suggestions…</span>
+                )}
+                {suggestions.map((s, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    className="suggestion-chip"
+                    onClick={() => void generate(s)}
+                    disabled={state.kind === "generating"}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

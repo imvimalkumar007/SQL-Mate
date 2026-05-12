@@ -17,6 +17,7 @@ import type {
   ProviderKind,
   RequestLogEntry,
   SchemaModel,
+  SessionTurn,
   ValidatedSql,
 } from "./types";
 
@@ -156,6 +157,12 @@ function App() {
   const [autostartEnabled, setAutostartEnabled] = useState(false);
   const [autostartError, setAutostartError] = useState<string | null>(null);
 
+  // ADR 0017: opt-in session context + follow-up suggestions
+  const [sessionContextEnabled, setSessionContextEnabled] = useState(false);
+  const [followupSuggestionsEnabled, setFollowupSuggestionsEnabled] = useState(false);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+
   // Phase 9 UX overhaul state
   const [openDialog, setOpenDialog] = useState<DialogId>(null);
   const [sessionHistory, setSessionHistory] = useState<SessionHistoryItem[]>([]);
@@ -176,6 +183,8 @@ function App() {
     void invoke<boolean>("get_autostart_enabled")
       .then(setAutostartEnabled)
       .catch((e) => setAutostartError(String(e)));
+    void invoke<boolean>("get_session_context_enabled").then(setSessionContextEnabled);
+    void invoke<boolean>("get_followup_suggestions_enabled").then(setFollowupSuggestionsEnabled);
     void refreshProviders();
     void invoke<ModelRegistry>("get_model_registry").then((r) => {
       setRegistry(r);
@@ -559,25 +568,42 @@ function App() {
     }
   }
 
-  async function generate() {
-    if (!selectedId || !question.trim()) return;
+  // Accepts an optional override question so suggestion chips can fire
+  // generation immediately without waiting for setQuestion to flush (ADR 0017).
+  async function generate(overrideQuestion?: string) {
+    const q = overrideQuestion ?? question;
+    if (!selectedId || !q.trim()) return;
+    if (overrideQuestion) setQuestion(overrideQuestion);
     setGenerating(true);
     setGeneratedSql(null);
     setGenerateError(null);
     setHistoryId(null);
     setGeneratedByModel(null);
     setValidation({ state: "idle" });
+    setSuggestions([]);
+    setSuggestionsLoading(false);
+
+    // Build session history to pass when context is enabled (ADR 0017).
+    // sessionHistory is newest-first; reverse to chronological for the backend.
+    const historyForBackend: SessionTurn[] = sessionContextEnabled
+      ? sessionHistory
+          .slice()
+          .reverse()
+          .map((h) => ({ question: h.question, sql: h.sql }))
+      : [];
+
     try {
       const result = await invoke<GenerationResult>("generate_sql", {
         connectionId: selectedId,
-        question,
+        question: q,
+        sessionHistory: historyForBackend.length > 0 ? historyForBackend : null,
       });
       setGeneratedSql(result.sql);
       setHistoryId(result.history_id);
       setGeneratedByModel(result.model);
       setSessionHistory((prev) => [
         {
-          question,
+          question: q,
           sql: result.sql,
           model: result.model,
           validationStatus: "pending",
@@ -587,11 +613,38 @@ function App() {
       ]);
       void refreshRequestLog(selectedId);
       void validate(result.sql, result.history_id);
+
+      // Fetch follow-up suggestions in the background (ADR 0017).
+      // Best-effort: never blocks the SQL result.
+      if (followupSuggestionsEnabled) {
+        setSuggestionsLoading(true);
+        void invoke<string[]>("get_followup_suggestions", {
+          connectionId: selectedId,
+          question: q,
+          sql: result.sql,
+        })
+          .then((s) => setSuggestions(s))
+          .catch(() => setSuggestions([]))
+          .finally(() => setSuggestionsLoading(false));
+      }
     } catch (e) {
       setGenerateError(String(e));
     } finally {
       setGenerating(false);
     }
+  }
+
+  async function toggleSessionContext() {
+    const next = !sessionContextEnabled;
+    await invoke("set_session_context_enabled", { enabled: next });
+    setSessionContextEnabled(next);
+  }
+
+  async function toggleFollowupSuggestions() {
+    const next = !followupSuggestionsEnabled;
+    await invoke("set_followup_suggestions_enabled", { enabled: next });
+    setFollowupSuggestionsEnabled(next);
+    if (!next) setSuggestions([]);
   }
 
   async function validate(sql: string, hid: string | null = historyId) {
@@ -985,6 +1038,27 @@ function App() {
                 </div>
                 <SqlBlock sql={generatedSql} />
                 <ValidationStatus validation={validation} />
+
+                {/* ADR 0017: follow-up suggestion chips */}
+                {followupSuggestionsEnabled && (suggestionsLoading || suggestions.length > 0) && (
+                  <div className="suggestion-chips">
+                    {suggestionsLoading && suggestions.length === 0 && (
+                      <span className="suggestions-loading">fetching suggestions…</span>
+                    )}
+                    {suggestions.map((s, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        className="suggestion-chip"
+                        onClick={() => void generate(s)}
+                        disabled={generating}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 {requestLog && (
                   <div className="request-log">
                     <details>
@@ -1435,6 +1509,45 @@ function App() {
               onClick={() => void toggleAutostart()}
             >
               {autostartEnabled ? "ON" : "OFF"}
+            </button>
+          </div>
+
+          <div className="setting-row" style={{ marginTop: "1rem" }}>
+            <div className="setting-text">
+              <strong>Session context</strong>
+              <p className="muted small">
+                When on, the last 5 Q+SQL pairs from this session are sent to
+                the LLM alongside your next question, so you can ask follow-ups
+                like "now filter that by region" without restating context.
+                Off by default. When enabled, previous queries in this session
+                are included in every LLM request — see the security model
+                for what that means.
+              </p>
+            </div>
+            <button
+              className={`toggle-chip${sessionContextEnabled ? " on" : ""}`}
+              onClick={() => void toggleSessionContext()}
+            >
+              {sessionContextEnabled ? "ON" : "OFF"}
+            </button>
+          </div>
+
+          <div className="setting-row" style={{ marginTop: "1rem" }}>
+            <div className="setting-text">
+              <strong>Follow-up suggestions</strong>
+              <p className="muted small">
+                When on, after each SQL generation the app makes a second
+                lightweight LLM call and shows up to 3 suggested follow-up
+                questions as clickable chips. Clicking a chip pre-fills the
+                question and generates immediately. Off by default. Each
+                generation fires one extra LLM request when this is enabled.
+              </p>
+            </div>
+            <button
+              className={`toggle-chip${followupSuggestionsEnabled ? " on" : ""}`}
+              onClick={() => void toggleFollowupSuggestions()}
+            >
+              {followupSuggestionsEnabled ? "ON" : "OFF"}
             </button>
           </div>
 
