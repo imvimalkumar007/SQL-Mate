@@ -31,6 +31,7 @@ import {
   IconError,
   IconExpandLess,
   IconExpandMore,
+  IconHistory,
   IconInfo,
   IconProgress,
   IconRefresh,
@@ -42,6 +43,7 @@ import {
 import type {
   ConnectionProfile,
   GenerationResult,
+  HistoryEntry,
   ModelRegistry,
   ProviderConfig,
   SchemaModel,
@@ -97,6 +99,9 @@ export function Widget() {
   const [widgetSessionHistory, setWidgetSessionHistory] = useState<SessionTurn[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
 
@@ -223,6 +228,8 @@ export function Widget() {
       if (e.key === "Escape") {
         if (pickerOpen) {
           setPickerOpen(false);
+        } else if (historyOpen) {
+          setHistoryOpen(false);
         } else {
           void invoke("hide_widget");
         }
@@ -271,6 +278,8 @@ export function Widget() {
     // schema is not useful and could confuse the LLM (ADR 0017).
     setWidgetSessionHistory([]);
     setSuggestions([]);
+    setHistoryOpen(false);
+    setHistoryEntries([]);
 
     // Mark current SQL stale before switching away.
     const hadSql = state.kind === "generated" || state.kind === "validation_error";
@@ -323,6 +332,43 @@ export function Widget() {
         return next;
       });
     }
+  }
+
+  async function toggleSessionContext() {
+    const next = !sessionContextEnabled;
+    await invoke("set_session_context_enabled", { enabled: next });
+    setSessionContextEnabled(next);
+  }
+
+  async function toggleFollowupSuggestions() {
+    const next = !followupSuggestionsEnabled;
+    await invoke("set_followup_suggestions_enabled", { enabled: next });
+    setFollowupSuggestionsEnabled(next);
+    if (!next) setSuggestions([]);
+  }
+
+  async function openHistory() {
+    if (!profile) return;
+    setHistoryOpen(true);
+    setHistoryLoading(true);
+    try {
+      const entries = await invoke<HistoryEntry[]>("list_history", {
+        connectionId: profile.id,
+        limit: 50,
+      });
+      setHistoryEntries(entries);
+    } catch {
+      setHistoryEntries([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  function useHistoryEntry(entry: HistoryEntry) {
+    setQuestion(entry.question);
+    setHistoryOpen(false);
+    // Focus the textarea so the user can adjust or immediately generate.
+    window.setTimeout(() => textareaRef.current?.focus(), 50);
   }
 
   // Accepts an optional override question so suggestion chips can fire
@@ -522,6 +568,15 @@ export function Widget() {
           >
             <IconRemove />
           </button>
+          {profile && (
+            <button
+              className={`icon-btn${historyOpen ? " icon-btn--active" : ""}`}
+              title="Query history"
+              onClick={() => historyOpen ? setHistoryOpen(false) : void openHistory()}
+            >
+              <IconHistory />
+            </button>
+          )}
           <button
             className="icon-btn"
             title="Open main window"
@@ -599,6 +654,15 @@ export function Widget() {
             </button>
           </div>
         </div>
+      ) : historyOpen ? (
+        <div className="widget-body">
+          <HistoryPanel
+            entries={historyEntries}
+            loading={historyLoading}
+            onUse={useHistoryEntry}
+            onClose={() => setHistoryOpen(false)}
+          />
+        </div>
       ) : (
         <div className="widget-body">
           <label className="field-label">Ask</label>
@@ -616,6 +680,24 @@ export function Widget() {
               }
             }}
           />
+
+          {/* Feature toggles — visible so they're discoverable in the primary UI */}
+          <div className="widget-toggles">
+            <button
+              className={`widget-toggle${sessionContextEnabled ? " on" : ""}`}
+              onClick={() => void toggleSessionContext()}
+              title="When on, sends your last 5 Q+SQL pairs so you can ask follow-ups."
+            >
+              Context {sessionContextEnabled ? "ON" : "OFF"}
+            </button>
+            <button
+              className={`widget-toggle${followupSuggestionsEnabled ? " on" : ""}`}
+              onClick={() => void toggleFollowupSuggestions()}
+              title="When on, shows 3 suggested follow-up questions after each query."
+            >
+              Suggestions {followupSuggestionsEnabled ? "ON" : "OFF"}
+            </button>
+          </div>
 
           <div className="action-row">
             <span className="schema-pill">
@@ -811,4 +893,67 @@ function FooterRight({ state }: { state: WidgetState }) {
     return <span className="footer-stat">esc to cancel</span>;
   }
   return <span className="footer-stat">esc to dismiss</span>;
+}
+
+function formatHistoryAge(ts: number): string {
+  const diff = Math.floor(Date.now() / 1000) - ts;
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+function HistoryPanel({
+  entries,
+  loading,
+  onUse,
+  onClose,
+}: {
+  entries: HistoryEntry[];
+  loading: boolean;
+  onUse: (e: HistoryEntry) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="history-panel">
+      <div className="history-panel-header">
+        <span className="field-label" style={{ marginBottom: 0 }}>Recent queries</span>
+        <button className="history-panel-back" onClick={onClose} title="Back (Esc)">
+          ✕ close
+        </button>
+      </div>
+
+      {loading && (
+        <span className="suggestions-loading">loading…</span>
+      )}
+
+      {!loading && entries.length === 0 && (
+        <div className="history-panel-empty">No queries yet for this connection.</div>
+      )}
+
+      {!loading && entries.length > 0 && (
+        <ul className="history-panel-list">
+          {entries.map((entry) => (
+            <li key={entry.id}>
+              <button
+                className="history-panel-item"
+                onClick={() => onUse(entry)}
+                title="Click to use this question"
+              >
+                <div className="history-panel-question">{entry.question}</div>
+                <div className="history-panel-meta">
+                  <span>{formatHistoryAge(entry.asked_at)}</span>
+                  {entry.validation_status === "valid" ? (
+                    <span className="history-panel-ok">✓ valid</span>
+                  ) : (
+                    <span className="history-panel-err">✗ rejected</span>
+                  )}
+                </div>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
