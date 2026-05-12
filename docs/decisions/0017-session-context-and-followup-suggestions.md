@@ -173,6 +173,27 @@ already recorded by `generate_sql`). It does not validate or execute SQL.
 Stored in the existing `settings` table alongside `telemetry_enabled` and
 `onboarding_completed`. No migration required.
 
+## Phase 12 update — discoverability
+
+Initial implementation surfaced both toggles only in the Settings dialog on
+the main window. User feedback found them invisible in practice because the
+floating widget is the primary mode of use and does not open Settings during a
+typical session.
+
+Shipped in Phase 12:
+
+- **Main window** — "Session context ON/OFF" and "Suggestions ON/OFF" pill
+  buttons added directly to the "Ask a question" card header, visible without
+  opening any dialog.
+- **Widget** — the same two toggles appear as compact chip buttons between the
+  question textarea and the action row, always visible. They call
+  `set_session_context_enabled` / `set_followup_suggestions_enabled` with the
+  same command signatures and write to the same settings table rows as the main
+  window. State is shared between windows.
+
+No schema or protocol changes. The Settings dialog rows remain as a secondary
+surface for users who prefer to manage settings centrally.
+
 ## Revisit conditions
 
 - If structured output becomes reliable across all three provider types,
