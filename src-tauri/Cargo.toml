@@ -65,3 +65,35 @@ tokio = { version = "1", features = ["process", "io-util", "sync", "macros", "rt
 # bundle font files. See `src/security_pdf.rs`.
 printpdf = "=0.7.0"
 
+# Release profile: split into more codegen units so LLVM works on smaller
+# chunks and doesn't exhaust memory on lower-RAM machines. opt-level 2 is
+# still fast enough for a desktop app; lto=false avoids the extra LTO pass
+# that would otherwise merge everything back into one large unit.
+[profile.release]
+codegen-units = 16
+opt-level     = 0   # no LLVM optimisation passes → minimal peak RAM
+lto           = false
+
+# Per-package overrides for the two crates that are largest at opt-level > 0.
+# windows is ~500k LOC of generated code; aws-lc-sys compiles a full C crypto
+# library via CMake. Both are effectively compile-time-only concerns.
+[profile.release.package.windows]
+codegen-units = 256
+opt-level     = 0
+
+[profile.release.package.aws-lc-sys]
+codegen-units = 32
+opt-level     = 0
+
+# Same overrides for debug builds (tauri build --debug).
+# debug = 0 suppresses PDB generation for this crate, which is the main
+# source of memory pressure in debug mode on the windows crate.
+[profile.dev.package.windows]
+codegen-units = 256
+opt-level     = 0
+debug         = 0
+
+[profile.dev.package.aws-lc-sys]
+codegen-units = 32
+opt-level     = 0
+debug         = 0
