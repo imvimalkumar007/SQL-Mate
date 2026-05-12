@@ -543,3 +543,42 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 }
 .stale-sql-notice svg { font-size: 12px; }
 .code-block.stale { opacity: 0.45; }
+
+/* ------------ ADR 0017: follow-up suggestion chips ------------ */
+
+.suggestion-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 0 2px;
+}
+
+.suggestion-chip {
+  background: var(--surface-3);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.35;
+  padding: 3px 10px;
+  text-align: left;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.suggestion-chip:hover:not(:disabled) {
+  background: var(--surface-4);
+  border-color: var(--primary-dim);
+  color: var(--primary);
+}
+.suggestion-chip:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.suggestions-loading {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-style: italic;
+}

@@ -112,6 +112,12 @@ export type GenerationResult = {
   model: string;
 };
 
+/** A single Q+SQL turn passed to generate_sql when session context is on (ADR 0017). */
+export type SessionTurn = {
+  question: string;
+  sql: string;
+};
+
 export type HistoryEntry = {
   id: string;
   connection_id: string;

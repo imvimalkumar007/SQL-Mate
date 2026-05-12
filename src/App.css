@@ -637,3 +637,40 @@ button.link-danger:hover { color: var(--danger); background: transparent; filter
   margin: 4px 0 8px;
   font-style: italic;
 }
+
+/* ------------ ADR 0017: follow-up suggestion chips ------------ */
+
+.suggestion-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+}
+
+.suggestion-chip {
+  background: var(--surface-3);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  padding: 0.25rem 0.75rem;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.suggestion-chip:hover:not(:disabled) {
+  background: var(--surface-4);
+  border-color: var(--primary-dim);
+  color: var(--primary);
+}
+.suggestion-chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.suggestions-loading {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  font-style: italic;
+}
