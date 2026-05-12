@@ -594,3 +594,123 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   font-size: 11px;
   font-style: italic;
 }
+
+/* ── History icon-btn active state ──────────────────────────── */
+.icon-btn--active {
+  background: rgba(173, 198, 255, 0.14);
+  color: var(--primary);
+}
+
+/* ── Feature toggles ─────────────────────────────────────────── */
+
+.widget-toggles {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.widget-toggle {
+  background: var(--surface-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-pill);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 2px 8px;
+  min-height: 20px;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.widget-toggle.on {
+  background: rgba(173, 198, 255, 0.14);
+  border-color: var(--primary-dim);
+  color: var(--primary);
+}
+.widget-toggle:hover { filter: brightness(1.15); }
+
+/* ── History panel ───────────────────────────────────────────── */
+
+.history-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.history-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.history-panel-back {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  transition: color 0.12s, background 0.12s;
+}
+.history-panel-back:hover { color: var(--text); background: var(--surface-3); filter: none; }
+
+.history-panel-empty {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+  padding: 8px 0;
+}
+
+.history-panel-list {
+  list-style: none;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.history-panel-item {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  padding: 6px 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 400;
+  transition: background 0.12s, border-color 0.12s;
+}
+.history-panel-item:hover {
+  background: var(--surface-3);
+  border-color: var(--border-soft);
+  filter: none;
+}
+
+.history-panel-question {
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-panel-meta {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.history-panel-ok  { color: var(--validated); }
+.history-panel-err { color: var(--danger); }
