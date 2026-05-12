@@ -12,6 +12,7 @@ import type {
   ConnectionProfile,
   EmbeddingStats,
   GenerationResult,
+  HistoryEntry,
   ModelRegistry,
   ProviderConfig,
   ProviderKind,
@@ -81,7 +82,7 @@ function defaultProviderForm(reg: ModelRegistry | null): NewProviderForm {
   };
 }
 
-type DialogId = "providers" | "connections" | "settings" | "security" | null;
+type DialogId = "providers" | "connections" | "settings" | "security" | "history" | null;
 
 type SessionHistoryItem = {
   question: string;
@@ -163,6 +164,10 @@ function App() {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
 
+  // Persisted query history (loaded when the History dialog opens)
+  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
   // Phase 9 UX overhaul state
   const [openDialog, setOpenDialog] = useState<DialogId>(null);
   const [sessionHistory, setSessionHistory] = useState<SessionHistoryItem[]>([]);
@@ -171,6 +176,7 @@ function App() {
     connections: useRef<HTMLDialogElement>(null),
     settings: useRef<HTMLDialogElement>(null),
     security: useRef<HTMLDialogElement>(null),
+    history: useRef<HTMLDialogElement>(null),
   };
 
   useEffect(() => {
@@ -634,6 +640,23 @@ function App() {
     }
   }
 
+  async function openHistory() {
+    if (!selectedProfile) return;
+    setOpenDialog("history");
+    setHistoryLoading(true);
+    try {
+      const entries = await invoke<HistoryEntry[]>("list_history", {
+        connectionId: selectedProfile.id,
+        limit: 100,
+      });
+      setHistoryEntries(entries);
+    } catch {
+      setHistoryEntries([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
   async function toggleSessionContext() {
     const next = !sessionContextEnabled;
     await invoke("set_session_context_enabled", { enabled: next });
@@ -703,6 +726,11 @@ function App() {
           <button className="topbar-link" onClick={() => setOpenDialog("connections")}>
             Connections
           </button>
+          {selectedProfile && (
+            <button className="topbar-link" onClick={() => void openHistory()}>
+              History
+            </button>
+          )}
           <button className="topbar-link" onClick={() => setOpenDialog("settings")}>
             Settings
           </button>
@@ -975,7 +1003,25 @@ function App() {
 
             {schema && (
               <section className="card">
-                <h2>Ask a question</h2>
+                <div className="ask-header">
+                  <h2>Ask a question</h2>
+                  <div className="feature-toggles">
+                    <button
+                      className={`feature-toggle${sessionContextEnabled ? " on" : ""}`}
+                      onClick={() => void toggleSessionContext()}
+                      title="When on, the last 5 Q+SQL pairs from this session are sent to the LLM so you can ask follow-ups like 'now filter that by region'."
+                    >
+                      Session context {sessionContextEnabled ? "ON" : "OFF"}
+                    </button>
+                    <button
+                      className={`feature-toggle${followupSuggestionsEnabled ? " on" : ""}`}
+                      onClick={() => void toggleFollowupSuggestions()}
+                      title="When on, generates 3 suggested follow-up questions after each query."
+                    >
+                      Suggestions {followupSuggestionsEnabled ? "ON" : "OFF"}
+                    </button>
+                  </div>
+                </div>
                 <ModelPicker
                   active={activeProvider}
                   registry={registry}
@@ -1571,6 +1617,59 @@ function App() {
               {telemetryEnabled ? "ON" : "OFF"}
             </button>
           </div>
+        </div>
+      </dialog>
+
+      {/* ── History dialog ──────────────────────────────────── */}
+      <dialog
+        ref={dialogRefs.history}
+        className="app-dialog app-dialog--wide"
+        onClose={() => setOpenDialog(null)}
+      >
+        <div className="dialog-header">
+          <h2>Query history</h2>
+          <button
+            className="dialog-close"
+            onClick={() => setOpenDialog(null)}
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+        <div className="dialog-body">
+          {historyLoading && <p className="muted small">Loading…</p>}
+          {!historyLoading && historyEntries.length === 0 && (
+            <p className="muted small">No queries recorded for this connection yet.</p>
+          )}
+          {!historyLoading && historyEntries.length > 0 && (
+            <ul className="history-list">
+              {historyEntries.map((entry) => (
+                <li key={entry.id} className="history-list-item">
+                  <div className="history-list-meta">
+                    <span className="muted small">
+                      {new Date(entry.asked_at * 1000).toLocaleString()}
+                    </span>
+                    {entry.validation_status === "ok" && (
+                      <span className="badge badge-ok">valid</span>
+                    )}
+                    {entry.validation_status === "error" && (
+                      <span className="badge badge-error">invalid</span>
+                    )}
+                    {entry.validation_status === "pending" && (
+                      <span className="badge">pending</span>
+                    )}
+                  </div>
+                  <div className="history-list-question">{entry.question}</div>
+                  {entry.generated_sql && <SqlBlock sql={entry.generated_sql} />}
+                  {entry.validation_error && (
+                    <div className="status status-error" style={{ marginTop: "0.4rem" }}>
+                      {entry.validation_error}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </dialog>
 
