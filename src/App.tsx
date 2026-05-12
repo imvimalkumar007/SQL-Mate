@@ -1521,7 +1521,7 @@ function App() {
               )}
             </div>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.3rem" }}>
-              <code style={{ background: "#f5f5f5", padding: "0.2rem 0.5rem", borderRadius: "4px" }}>
+              <code className="kbd-chip">
                 {recordingHotkey ? "Press combo…" : prettyHotkey(widgetHotkey)}
               </code>
               {recordingHotkey ? (
