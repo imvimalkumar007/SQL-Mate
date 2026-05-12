@@ -48,6 +48,9 @@ uuid = { version = "=1.23.1", features = ["v4", "serde"] }
 time = { version = "=0.3.47", features = ["serde", "formatting"] }
 # CSPRNG for the SQLCipher key generated on first launch.
 getrandom = "=0.3.4"
+# Securely zero sensitive byte buffers (API keys, DB passwords, crypto key
+# material) before they are freed so they don't linger in heap memory.
+zeroize = { version = "1", features = ["derive"] }
 # Async process + IO + channels for the Python sidecar manager.
 # See docs/decisions/0009-python-sidecar-lifecycle.md.
 tokio = { version = "1", features = ["process", "io-util", "sync", "macros", "rt-multi-thread", "time"] }

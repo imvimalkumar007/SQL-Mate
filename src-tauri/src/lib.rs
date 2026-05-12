@@ -205,6 +205,7 @@ pub fn run() {
             commands::get_widget_hotkey_error,
             commands::get_autostart_enabled,
             commands::set_autostart_enabled,
+            commands::rotate_db_key,
             commands::clamp_widget_to_visible_monitor,
         ])
         .run(tauri::generate_context!())
