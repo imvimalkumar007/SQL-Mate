@@ -10,7 +10,7 @@ These are claims we make and that the architecture structurally enforces. A user
 2. **We are not in the data path.** The application makes its LLM calls directly from your machine to the provider you configured, using the API key you provided. We do not proxy. We do not have a server. We could not see your data even if we wanted to.
 3. **Generated SQL is read-only by construction.** Every query we generate is parsed and validated for read-only operations before you see it. The validator rejects any query that mutates state. This is enforced at the application layer; we recommend you also use database credentials that are read-only at the database layer.
 4. **The app does not execute generated SQL.** As of the Phase 9 UX overhaul we removed the run-query path entirely. The app produces validated SQL and you copy it into your own tool to run. This is a stronger posture than "auto-execute disabled" — there is simply no execution code path inside the app.
-5. **Your API keys and database passwords are stored encrypted at rest on your machine.** As of Phase 2, secrets live in a SQLCipher-encrypted local SQLite file (AES-256-CBC, key in a sibling file). The original spec called for the OS keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service); that integration is deferred and tracked in ADR 0008. We never log keys, transmit them, or include them in telemetry.
+5. **Your API keys and database passwords are stored encrypted at rest on your machine.** Secrets live in a SQLCipher-encrypted local SQLite file (AES-256-CBC). On Windows, the SQLCipher encryption key is stored in Windows Credential Manager (DPAPI-encrypted per user) — see ADR 0016. On macOS and Linux the key is in a sibling file with `chmod 0600` (OS keychain integration for those platforms is a future item). We never log keys, transmit them, or include them in telemetry.
 6. **No telemetry by default.** If you opt in, telemetry pings contain only anonymous usage counts and never include schema names, query text, or any database content.
 
 ## What we do not guarantee
@@ -53,7 +53,7 @@ These are the threats we design against, in priority order.
 
 **Scenario:** A user's LLM API key is read by malware, by another application on their machine, or by us.
 
-**Mitigation:** Keys are stored in the SQLCipher-encrypted local store (Phase 2). We read the key from the store only at the moment of an outbound LLM request and do not cache it in long-lived memory. We never log keys. We never include keys in error messages or telemetry. The original mitigation called for the OS keychain; ADR 0008 defers that to Phase 7. The threat profile is weakened: an attacker with read access to the user's app data directory has both the encrypted store and the SQLCipher key file. A real keychain would raise the bar to OS-level credential access.
+**Mitigation:** Keys are stored in the SQLCipher-encrypted local store. We read the key from the store only at the moment of an outbound LLM request and do not cache it in long-lived memory. We never log keys. We never include keys in error messages or telemetry. On Windows, the SQLCipher key itself is stored in Windows Credential Manager (DPAPI-encrypted per user, ADR 0016) — an attacker now needs the user's Windows login credential to access it, not just file system read access. On macOS and Linux the key remains in a `chmod 0600` file alongside the store; OS keychain integration for those platforms is a future item.
 
 ### T5: Data leak via logs
 

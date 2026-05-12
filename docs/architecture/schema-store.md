@@ -4,7 +4,13 @@ Local persistence for schema models, user annotations, redaction rules, query hi
 
 ## Storage location
 
-`<app data dir>/sql-mate/store.db` — a single SQLite file, encrypted with SQLCipher. The encryption key is loaded from `<app data dir>/sql-mate/.db-key` (32 random bytes generated on first launch). The original spec called for the key to be derived from a value held in the OS keychain; that integration is deferred per ADR 0008 and revisited in Phase 7.
+`<app data dir>/sql-mate/store.db` — a single SQLite file, encrypted with SQLCipher.
+
+**Key storage (ADR 0016):** On Windows, the 32-byte SQLCipher key is stored in
+Windows Credential Manager under the target name `sql-mate/db-key`, encrypted
+with DPAPI per user. On macOS and Linux, the key lives in
+`<app data dir>/sql-mate/.db-key` with `chmod 0600`; OS keychain integration
+for those platforms is a future item tracked in ADR 0016.
 
 App data dir resolves to:
 - macOS: `~/Library/Application Support/sql-mate/`
@@ -90,9 +96,9 @@ CREATE TABLE settings (
 
 ## Secrets
 
-- **Database passwords** are stored in the `connection_profiles.password` column inside the SQLCipher-encrypted store (Phase 2). Original spec was OS keychain; deferred per ADR 0008.
-- **LLM API keys** are stored in `provider_configs.api_key` (one row per configured provider, added in Phase 4 with migration 0002), also inside the SQLCipher-encrypted store. Same deferral as above. The keys are read from the store at the moment of an outbound LLM request and not cached in long-lived memory.
-- **The SQLCipher key itself** is in `<app data dir>/sql-mate/.db-key`, sitting next to the encrypted store with normal user-mode ACLs. Rebuilding the keychain story is a Phase 7 follow-up.
+- **Database passwords** are stored in the `connection_profiles.password` column inside the SQLCipher-encrypted store.
+- **LLM API keys** are stored in `provider_configs.api_key` (one row per configured provider, added in Phase 4 with migration 0002), also inside the SQLCipher-encrypted store. Keys are read from the store at the moment of an outbound LLM request and not cached in long-lived memory.
+- **The SQLCipher key itself** — see ADR 0016. On Windows: Windows Credential Manager (`sql-mate/db-key`, DPAPI-encrypted per user). On macOS/Linux: `<app data dir>/sql-mate/.db-key` with `chmod 0600`.
 
 ## Migrations
 
@@ -100,15 +106,26 @@ Schema versions are managed via a `schema_version` row in `settings`. Migrations
 
 ## Key derivation
 
-The SQLCipher key is derived as follows (Phase 2 implementation; ADR 0008 commits us to revisit in Phase 7):
+The SQLCipher key is derived as follows (ADR 0016 implementation):
 
+**Windows:**
 1. On first launch, generate 32 bytes from a CSPRNG.
-2. Write those bytes to `<app data dir>/sql-mate/.db-key`.
-3. On every subsequent launch, read the bytes from the file and pass to SQLCipher.
+2. Save those bytes to Windows Credential Manager (`sql-mate/db-key`,
+   `CRED_TYPE_GENERIC`, `CRED_PERSIST_LOCAL_MACHINE`).
+3. On every subsequent launch, read the bytes from Credential Manager via
+   `CredReadW` and pass to SQLCipher.
+4. **Migration:** if a `.db-key` file exists from a pre-ADR-0016 install, its
+   contents are moved into Credential Manager and the file is deleted
+   automatically on first launch after the upgrade.
 
-If the key file is missing or corrupted, the database is unreadable and the user must reset it. We do not provide a recovery mechanism beyond reset, by design — recoverable encryption is not encryption.
+**macOS / Linux:**
+1. On first launch, generate 32 bytes from a CSPRNG.
+2. Write those bytes to `<app data dir>/sql-mate/.db-key` with `chmod 0600`.
+3. On every subsequent launch, read the bytes from the file.
 
-The intended longer-term scheme stores the key in the OS keychain (`(sql-mate, db-key)`); see ADR 0008 for why we deferred and what would unblock the migration.
+If the key is missing or corrupted, the database is unreadable and must be
+reset. There is no recovery mechanism by design — recoverable encryption is not
+encryption.
 
 ## Backup and export
 
