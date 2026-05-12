@@ -139,10 +139,11 @@ Both the live extractor and any future file-based ingestion produce this shape. 
 
 ## Persistence
 
-- Schema cache, annotations, redactions, embeddings, history, provider configs, connection profiles, settings: a single SQLCipher-encrypted SQLite file at `<app data dir>/sql-mate/store.db`. The 32-byte key sits in `<app data dir>/sql-mate/.db-key`; OS keychain integration is deferred per ADR 0008.
-- Connection profiles include the password (encrypted in the store). The original architecture called for keychain-only password storage; that's the deferred part.
-- API keys: same SQLCipher store; never written to plaintext disk by us, never logged, never included in telemetry.
-- Logs: structure-only (counts, timings, error types). Never schema content. Never query content. (Phase 9 polish does not yet add a log retention policy — currently the app prints to stderr and Tauri's window console, not a file.)
+- Schema cache, annotations, redactions, embeddings, history, provider configs, connection profiles, settings: a single SQLCipher-encrypted SQLite file at `<app data dir>/sql-mate/store.db`.
+- **SQLCipher key storage (ADR 0016):** on Windows the 32-byte key is stored in Windows Credential Manager (`sql-mate/db-key`, DPAPI-encrypted per user). On macOS and Linux it lives in `<app data dir>/sql-mate/.db-key` with `chmod 0600`. OS keychain for macOS/Linux is a future item.
+- Connection profiles include the database password (encrypted inside the SQLCipher store). API keys: same store; never written to plaintext disk, never logged, never included in telemetry.
+- **Session history:** in-memory only (React state), resets on restart. The persisted `history` table (question + SQL + validation status) is separate and accumulates across sessions.
+- Logs: structure-only (counts, timings, error types). Never schema content. Never query content.
 
 ## What we do not have and will not add without an ADR
 

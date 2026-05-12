@@ -42,3 +42,9 @@ Terms used throughout the project that have a specific meaning here. When in dou
 
 **Stale SQL.** SQL that was generated against a different connection profile than the one currently active in the widget. When the user switches connections mid-session (via the connection picker), any previously generated SQL is retained on screen but rendered at reduced opacity (`opacity: 0.45`) with a "from previous connection" notice, and the copy button is disabled. Generating a new question clears the stale state.
 
+**Session context.** An opt-in setting (off by default, ADR 0017) that passes the last ≤5 Q+SQL pairs from the current session to the LLM alongside the next question. Enables natural follow-up questions like "now filter that by region" without restating context. When enabled, previous turns in the session are included in every LLM request. Resets on app restart or connection switch.
+
+**Follow-up suggestions.** An opt-in setting (off by default, ADR 0017) that fires a second lightweight LLM call (max 256 tokens) after each successful SQL generation and returns 3 suggested follow-up questions as clickable chips. Clicking a chip pre-fills the question and generates immediately. Never blocks the primary SQL result — if the suggestions call fails, it fails silently and the chips simply do not appear.
+
+**Windows Credential Manager.** The Windows OS secret store used to hold the SQLCipher encryption key on Windows (ADR 0016). Entries are encrypted with DPAPI, keyed to the current Windows user's login credential — a meaningfully higher bar than a file sitting in the app data directory. The target name used by SQL Mate is `sql-mate/db-key`. On macOS and Linux the key remains in a `chmod 0600` file; native keychain integration for those platforms is a future item.
+
