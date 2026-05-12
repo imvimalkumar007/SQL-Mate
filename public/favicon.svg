@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+
+    <!--
+      Neon glow: three stacked gaussian blurs composited under the
+      crisp source so the text reads sharp but bleeds light outward.
+    -->
+    <filter id="neon" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="28" result="b_wide"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="10" result="b_mid"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="3"  result="b_tight"/>
+      <feMerge>
+        <feMergeNode in="b_wide"/>
+        <feMergeNode in="b_mid"/>
+        <feMergeNode in="b_tight"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Wide ambient pool used for the background bloom -->
+    <filter id="bloom" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="48"/>
+    </filter>
+
+  </defs>
+
+  <!-- ── Background ──────────────────────────────────────────── -->
+  <rect width="512" height="512" rx="96" ry="96" fill="#07071a"/>
+
+  <!--
+    Ambient colour bloom — same text, massive blur, very low opacity.
+    Gives the impression of neon light spilling onto the dark surround.
+  -->
+  <text
+    x="256" y="256"
+    font-family="'Courier New', Courier, monospace"
+    font-size="252"
+    font-weight="bold"
+    text-anchor="middle"
+    dominant-baseline="central"
+    fill="#00e5ff"
+    opacity="0.22"
+    filter="url(#bloom)"
+    transform="rotate(-90, 256, 256)"
+  >;)</text>
+
+  <!--
+    ── The ;) winking face ───────────────────────────────────────
+    Rotated -90 ° (CCW) around the canvas centre so:
+      •  )  →  upward U-curve  =  smile           (bottom half)
+      •  ;  →  two side-by-side dots  =  eyes      (top half)
+              the comma tail gives the closed / winking eye
+  -->
+  <text
+    x="256" y="256"
+    font-family="'Courier New', Courier, monospace"
+    font-size="252"
+    font-weight="bold"
+    text-anchor="middle"
+    dominant-baseline="central"
+    fill="#00e5ff"
+    filter="url(#neon)"
+    transform="rotate(-90, 256, 256)"
+  >;)</text>
+
+</svg>
