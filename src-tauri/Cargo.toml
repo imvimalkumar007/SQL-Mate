@@ -70,7 +70,7 @@ printpdf = "=0.7.0"
 # still fast enough for a desktop app; lto=false avoids the extra LTO pass
 # that would otherwise merge everything back into one large unit.
 [profile.release]
-codegen-units = 16
+codegen-units = 1   # serialise codegen → avoids simultaneous rlib mmap exhausting paging file
 opt-level     = 0   # no LLVM optimisation passes → minimal peak RAM
 lto           = false
 
