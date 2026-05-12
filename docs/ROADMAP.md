@@ -90,11 +90,11 @@ Streaming SQL output is explicitly out of scope for Phase 10 — the "Streaming"
 
 See `docs/PHASE_10_KICKOFF.md` for the full kickoff doc.
 
-## Phase 11 — Widget polish (current)
+## Phase 11 — Widget polish (done)
 
-Multi-monitor position memory, hotkey customization UI, auto-start on Windows boot, surfacing hotkey-conflict errors, and a series of fixes that surfaced once the user actually started using the widget on Windows.
+Multi-monitor position memory, hotkey customization UI, auto-start on Windows boot, surfacing hotkey-conflict errors, multi-database connection picker in the widget, and a series of fixes that surfaced once the user actually started using the widget on Windows.
 
-**Done when:** the rough edges from Phase 10 are addressed and the widget feels native on Windows — opens after reboot, restores to the right monitor, doesn't conflict with other apps' hotkeys (and tells you when it does), is draggable, has clean rounded corners, and is consistent with the main window's visual language.
+**Done when:** the rough edges from Phase 10 are addressed and the widget feels native on Windows — opens after reboot, restores to the right monitor, doesn't conflict with other apps' hotkeys (and tells you when it does), is draggable, has clean rounded corners, is consistent with the main window's visual language, and users with multiple saved databases can switch between them without leaving the widget.
 
 What ships:
 
@@ -106,10 +106,11 @@ What ships:
 - **Main app aligned to the widget's design language.** App.css rewritten against the widget's CSS tokens (`--bg`, `--surface`, `--primary`, etc.). Both windows now share the same dark Material 3-inspired palette, Inter / JetBrains Mono typography, button shapes, dialog styling, and code-block syntax colors. No dark-mode media query — the app is dark-only.
 - **Window resize moved from JS to Rust.** Earlier the pill could render at full-screen size if the JS-side `setSize` raced the React mount. New `apply_widget_size_from_store` (called before `widget.show()`) and `apply_widget_size` (called by `set_widget_pill_mode`) keep the window dimensions in lockstep with the persisted `pill_mode` flag, no race possible.
 - **Transparent widget window.** Set `transparent: true` in `tauri.conf.json` so the area outside the widget's rounded HTML shape shows the desktop instead of WebView2's default white bleed. CSS `box-shadow` on the widget element provides the visible drop shadow so it tracks the rounded outline.
+- **Multi-database connection picker (ADR 0015).** When more than one connection profile is saved, the widget header shows the active connection as a clickable picker. A fixed-position overlay lists all profiles with schema age and a per-profile refresh button. Switching connections loads the new schema inline; any previously generated SQL dims with a "from previous connection" notice until the user generates fresh SQL for the new connection. Single-profile users see no change.
 
 The auto-hide-on-focus-loss behavior (originally Raycast-style) was removed: starting an OS drag transfers focus to the window manager, which fired the hide handler before the user could complete the drag. The widget now stays visible until explicitly dismissed (Esc, the close button, or clicking the tray icon).
 
-## Phase 12 — First five users
+## Phase 12 — First five users (current)
 
 Get five target users (regulated mid-market data engineers) using the app weekly. Iterate based on what they actually struggle with. Do not add features that no user asked for.
 

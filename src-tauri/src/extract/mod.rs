@@ -90,7 +90,9 @@ pub struct ConnectionParams {
     pub password: String,
 }
 
-pub async fn test_connection(dialect: &str, params: ConnectionParams) -> Result<(), ExtractError> {
+/// Returns `true` when the connected role has INSERT, UPDATE, or DELETE grants.
+/// SQL Mate only needs read access; callers should warn the user if `true`.
+pub async fn test_connection(dialect: &str, params: ConnectionParams) -> Result<bool, ExtractError> {
     match dialect {
         "postgres" => {
             postgres::test_connection(PgConnectionParams {

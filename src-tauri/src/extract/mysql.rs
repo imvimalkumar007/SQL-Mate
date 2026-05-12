@@ -58,18 +58,36 @@ impl MySqlConnectionParams {
     }
 }
 
-pub async fn test_connection(params: MySqlConnectionParams) -> Result<(), ExtractError> {
+/// Open the connection, verify it works, and probe whether the role has write
+/// privileges. Returns `true` when INSERT/UPDATE/DELETE grants are detected —
+/// SQL Mate only needs read access, so callers should surface a warning.
+pub async fn test_connection(params: MySqlConnectionParams) -> Result<bool, ExtractError> {
     let mut conn = params
         .into_options()
         .connect()
         .await
         .map_err(super::classify_connect_error)?;
+
     sqlx::query("SELECT 1")
         .execute(&mut conn)
         .await
         .map_err(super::classify_query_error)?;
+
+    // Check TABLE_PRIVILEGES for write grants. GRANTEE in MySQL is formatted
+    // as 'user'@'host'; USER() returns user@host so we reconstruct the format.
+    let write_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) \
+         FROM information_schema.TABLE_PRIVILEGES \
+         WHERE GRANTEE = CONCAT(\"'\", SUBSTRING_INDEX(USER(), '@', 1), \"'@'\", \
+                                SUBSTRING_INDEX(USER(), '@', -1), \"'\") \
+         AND PRIVILEGE_TYPE IN ('INSERT', 'UPDATE', 'DELETE')",
+    )
+    .fetch_one(&mut conn)
+    .await
+    .unwrap_or(0);
+
     let _ = conn.close().await;
-    Ok(())
+    Ok(write_count > 0)
 }
 
 pub async fn extract_schema(

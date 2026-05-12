@@ -239,10 +239,11 @@ the drag.)
 
 ## Using the widget
 
-1. The widget header shows `<connection name> · <model name>` and
-   three icon buttons (collapse to pill, open main window, hide to
-   tray). The header is draggable — grab any non-button area to move
-   the widget.
+1. The widget header shows the active connection and three icon buttons
+   (collapse to pill, open main window, hide to tray). When more than
+   one connection profile is saved, the connection name is rendered as a
+   clickable pill — the connection picker (see below). The header is
+   draggable — grab any non-button area to move the widget.
 2. The textarea autofocuses on summon. User types a question and
    presses `Ctrl+Enter` (or clicks "Generate").
 3. Backend runs the same `generate_sql` → `validate_sql` pipeline as
@@ -258,6 +259,42 @@ the drag.)
    `set_widget_position` / `set_widget_last_query` /
    `set_widget_pill_mode` Tauri commands. Restored on next summon
    (last_question / last_sql cleared if more than 24 hours old).
+
+## Switching database connections in the widget (Phase 11 / ADR 0015)
+
+When the user has saved two or more connection profiles, the widget
+header shows the active connection name as a clickable button (the
+connection picker).
+
+1. User clicks the connection picker button in the header.
+2. A fixed-position menu overlays the widget body listing all saved
+   connection profiles. Each entry shows the connection name, dialect,
+   and schema age ("extracted N hours ago" or "no schema"). If the
+   schema was extracted more than 7 days ago the age label renders in
+   the danger color as a stale indicator. A refresh icon next to each
+   entry lets the user re-extract that connection's schema inline. The
+   active connection has a check mark.
+3. User clicks a different connection. The menu closes.
+4. Widget loads the schema for the new connection via
+   `get_persisted_schema`. If no schema exists for the new connection,
+   the widget enters the `empty_no_schema` state (prompting the user to
+   extract).
+5. If SQL had already been generated for the previous connection, it
+   remains visible but dimmed (`opacity: 0.45`) with a "from previous
+   connection" notice. The copy button is disabled while SQL is stale.
+6. Generating a new question clears the stale flag; the fresh SQL
+   renders at full opacity.
+
+The picker only appears when `allProfiles.length > 1`. Single-profile
+users see the same static `<connection name> · <model name>` label as
+before, so the experience is unchanged for them.
+
+Pressing Esc while the picker is open closes the picker; a second Esc
+hides the widget.
+
+Modules involved: widget shell (ADR 0015), store::profiles,
+store::schemas (`get_schema_extracted_at`, `get_persisted_schema`),
+schema-extraction (`extract_schema`).
 
 ## Collapsing the widget to a pill
 

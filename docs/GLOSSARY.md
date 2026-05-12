@@ -38,3 +38,7 @@ Terms used throughout the project that have a specific meaning here. When in dou
 
 **Widget state.** A single-row table (`widget_state`) in the SQLCipher store holding last position, last question, last SQL, last validation status, and the `pill_mode` flag. Position and `pill_mode` persist indefinitely; the question / SQL / validation columns are cleared on read if the row is more than 24 hours old.
 
+**Connection picker.** The multi-database switcher in the widget header, introduced in Phase 11 (ADR 0015). Appears only when more than one connection profile exists. Clicking the active connection name opens a fixed-position overlay listing all saved profiles with their schema age and a per-profile refresh button. Selecting a different profile switches the widget's active connection inline, without leaving the widget or restarting the app.
+
+**Stale SQL.** SQL that was generated against a different connection profile than the one currently active in the widget. When the user switches connections mid-session (via the connection picker), any previously generated SQL is retained on screen but rendered at reduced opacity (`opacity: 0.45`) with a "from previous connection" notice, and the copy button is disabled. Generating a new question clears the stale state.
+

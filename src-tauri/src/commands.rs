@@ -97,9 +97,17 @@ pub struct TestConnectionRequest {
     pub password: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct TestConnectionResponse {
+    /// `true` when the database role has INSERT, UPDATE, or DELETE grants.
+    /// SQL Mate only needs read access. The UI surfaces a warning so the user
+    /// knows to connect with a properly restricted role.
+    pub write_access_detected: bool,
+}
+
 #[tauri::command]
-pub async fn test_connection(req: TestConnectionRequest) -> Result<(), String> {
-    extract::test_connection(
+pub async fn test_connection(req: TestConnectionRequest) -> Result<TestConnectionResponse, String> {
+    let write_access_detected = extract::test_connection(
         &req.dialect,
         ConnectionParams {
             host: req.host,
@@ -110,7 +118,8 @@ pub async fn test_connection(req: TestConnectionRequest) -> Result<(), String> {
         },
     )
     .await
-    .map_err(err)
+    .map_err(err)?;
+    Ok(TestConnectionResponse { write_access_detected })
 }
 
 #[tauri::command]
@@ -1090,6 +1099,19 @@ pub async fn set_autostart_enabled(enabled: bool, app: AppHandle) -> Result<(), 
     } else {
         manager.disable().map_err(|e| e.to_string())
     }
+}
+
+/// Rotate the SQLCipher encryption key for the local store. Generates a new
+/// 32-byte key via the OS CSPRNG, applies it with `PRAGMA rekey`, and
+/// overwrites the `.db-key` file. The operation is synchronous on the store
+/// mutex; do not call from a hot path.
+///
+/// If the file write fails after `PRAGMA rekey` succeeds, the DB is already
+/// re-encrypted with the new key. The error message tells the user to restart
+/// so the invalid key file is detected and they can intervene manually.
+#[tauri::command]
+pub async fn rotate_db_key(store: State<'_, Store>) -> Result<(), String> {
+    store.rotate_db_key().map_err(err)
 }
 
 #[tauri::command]

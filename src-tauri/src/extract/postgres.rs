@@ -79,9 +79,10 @@ impl PgConnectionParams {
     }
 }
 
-/// Open the connection and run `SELECT 1`. Used by the UI's "Test connection"
-/// button before saving a connection profile.
-pub async fn test_connection(params: PgConnectionParams) -> Result<(), ExtractError> {
+/// Open the connection, verify it works, and probe whether the role has write
+/// privileges. Returns `true` when INSERT/UPDATE/DELETE grants are detected —
+/// SQL Mate only needs read access, so callers should surface a warning.
+pub async fn test_connection(params: PgConnectionParams) -> Result<bool, ExtractError> {
     let mut conn = params
         .into_options()
         .connect()
@@ -93,8 +94,22 @@ pub async fn test_connection(params: PgConnectionParams) -> Result<(), ExtractEr
         .await
         .map_err(super::classify_query_error)?;
 
+    // Check whether the role has any INSERT, UPDATE, or DELETE grants.
+    // A properly configured read-only role will return 0. We query
+    // information_schema rather than attempting a write so this probe
+    // is entirely non-destructive.
+    let write_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) \
+         FROM information_schema.role_table_grants \
+         WHERE grantee = current_user \
+         AND privilege_type IN ('INSERT', 'UPDATE', 'DELETE')",
+    )
+    .fetch_one(&mut conn)
+    .await
+    .unwrap_or(0);
+
     let _ = conn.close().await;
-    Ok(())
+    Ok(write_count > 0)
 }
 
 /// Connect with read-only intent and run the metadata-only extraction query.
