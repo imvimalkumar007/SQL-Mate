@@ -44,26 +44,29 @@ impl Provider {
     }
 }
 
+#[rustfmt::skip]
 #[derive(Debug, Clone)]
 pub struct SqlGenerationRequest {
     pub system_prompt: String,
-    pub user_message: String,
-    pub model: String,
-    pub max_tokens: u32,
+    pub user_message:  String,
+    pub model:         String,
+    pub max_tokens:    u32,
 }
 
+#[rustfmt::skip]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SqlGenerationResponse {
-    pub sql: String,
+    pub sql:         String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub explanation: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub confidence: Option<f32>,
+    pub confidence:  Option<f32>,
 }
 
+#[rustfmt::skip]
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct ProviderCapabilities {
-    pub supports_prompt_caching: bool,
+    pub supports_prompt_caching:    bool,
     pub supports_structured_output: bool,
 }
 

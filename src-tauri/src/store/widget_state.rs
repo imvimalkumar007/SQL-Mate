@@ -12,31 +12,33 @@ use super::{Store, StoreError};
 
 const TWENTY_FOUR_HOURS_SECONDS: i64 = 24 * 60 * 60;
 
+#[rustfmt::skip]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WidgetState {
-    pub position_x: Option<i32>,
-    pub position_y: Option<i32>,
-    pub last_question: Option<String>,
-    pub last_sql: Option<String>,
-    pub last_model: Option<String>,
+    pub position_x:             Option<i32>,
+    pub position_y:             Option<i32>,
+    pub last_question:          Option<String>,
+    pub last_sql:               Option<String>,
+    pub last_model:             Option<String>,
     pub last_validation_status: Option<String>,
-    pub last_validation_error: Option<String>,
-    pub pill_mode: bool,
-    pub updated_at: i64,
+    pub last_validation_error:  Option<String>,
+    pub pill_mode:              bool,
+    pub updated_at:             i64,
 }
 
+#[rustfmt::skip]
 impl Default for WidgetState {
     fn default() -> Self {
         Self {
-            position_x: None,
-            position_y: None,
-            last_question: None,
-            last_sql: None,
-            last_model: None,
+            position_x:             None,
+            position_y:             None,
+            last_question:          None,
+            last_sql:               None,
+            last_model:             None,
             last_validation_status: None,
-            last_validation_error: None,
-            pill_mode: false,
-            updated_at: 0,
+            last_validation_error:  None,
+            pill_mode:              false,
+            updated_at:             0,
         }
     }
 }

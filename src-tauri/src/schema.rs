@@ -4,12 +4,13 @@
 
 use serde::{Deserialize, Serialize};
 
+#[rustfmt::skip]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SchemaModel {
-    pub dialect: Dialect,
-    pub schemas: Vec<DbSchema>,
+    pub dialect:      Dialect,
+    pub schemas:      Vec<DbSchema>,
     pub extracted_at: i64,
-    pub source: ExtractionSource,
+    pub source:       ExtractionSource,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,41 +28,45 @@ pub enum ExtractionSource {
     // FileImport variants are out of v1 scope per docs/PROJECT_BRIEF.md.
 }
 
+#[rustfmt::skip]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DbSchema {
-    pub name: String,
+    pub name:   String,
     pub tables: Vec<Table>,
 }
 
+#[rustfmt::skip]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Table {
-    pub name: String,
-    pub columns: Vec<Column>,
-    pub primary_key: Vec<String>,
-    pub foreign_keys: Vec<ForeignKey>,
+    pub name:            String,
+    pub columns:         Vec<Column>,
+    pub primary_key:     Vec<String>,
+    pub foreign_keys:    Vec<ForeignKey>,
     #[serde(default)]
     pub user_annotation: Option<String>,
     #[serde(default)]
-    pub excluded: bool,
+    pub excluded:        bool,
 }
 
+#[rustfmt::skip]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Column {
-    pub name: String,
-    pub data_type: String,
-    pub nullable: bool,
+    pub name:            String,
+    pub data_type:       String,
+    pub nullable:        bool,
     #[serde(default)]
-    pub default: Option<String>,
+    pub default:         Option<String>,
     #[serde(default)]
     pub user_annotation: Option<String>,
     #[serde(default)]
-    pub sensitive: bool,
+    pub sensitive:       bool,
 }
 
+#[rustfmt::skip]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ForeignKey {
-    pub columns: Vec<String>,
-    pub references_schema: String,
-    pub references_table: String,
+    pub columns:            Vec<String>,
+    pub references_schema:  String,
+    pub references_table:   String,
     pub references_columns: Vec<String>,
 }

@@ -3,32 +3,34 @@ use serde::{Deserialize, Serialize};
 
 use super::{Store, StoreError};
 
+#[rustfmt::skip]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionProfile {
-    pub id: String,
-    pub name: String,
-    pub dialect: String,
-    pub host: String,
-    pub port: u16,
+    pub id:            String,
+    pub name:          String,
+    pub dialect:       String,
+    pub host:          String,
+    pub port:          u16,
     pub database_name: String,
-    pub username: String,
+    pub username:      String,
     // Stored within the SQLCipher-encrypted local store. Not exposed back to
     // the frontend.
     #[serde(skip_serializing)]
-    pub password: String,
-    pub created_at: i64,
-    pub last_used_at: Option<i64>,
+    pub password:      String,
+    pub created_at:    i64,
+    pub last_used_at:  Option<i64>,
 }
 
+#[rustfmt::skip]
 #[derive(Debug, Clone, Deserialize)]
 pub struct NewConnectionProfile {
-    pub name: String,
-    pub dialect: String,
-    pub host: String,
-    pub port: u16,
+    pub name:          String,
+    pub dialect:       String,
+    pub host:          String,
+    pub port:          u16,
     pub database_name: String,
-    pub username: String,
-    pub password: String,
+    pub username:      String,
+    pub password:      String,
 }
 
 impl Store {

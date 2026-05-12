@@ -11,17 +11,18 @@ use uuid::Uuid;
 
 use super::{Store, StoreError};
 
+#[rustfmt::skip]
 #[derive(Debug, Clone, Serialize)]
 pub struct HistoryEntry {
-    pub id: String,
-    pub connection_id: String,
-    pub asked_at: i64,
-    pub question: String,
-    pub generated_sql: Option<String>,
-    pub validation_status: String,
-    pub validation_error: Option<String>,
-    pub was_executed: bool,
-    pub execution_row_count: Option<i64>,
+    pub id:                    String,
+    pub connection_id:         String,
+    pub asked_at:              i64,
+    pub question:              String,
+    pub generated_sql:         Option<String>,
+    pub validation_status:     String,
+    pub validation_error:      Option<String>,
+    pub was_executed:          bool,
+    pub execution_row_count:   Option<i64>,
     pub execution_duration_ms: Option<i64>,
 }
 

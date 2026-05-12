@@ -46,12 +46,13 @@ fn err<E: std::fmt::Display>(e: E) -> String {
 
 // ---------- Connection profiles ----------
 
+#[rustfmt::skip]
 #[derive(Debug, Deserialize)]
 pub struct CreateProfileRequest {
-    pub name: String,
-    pub dialect: String,
-    pub host: String,
-    pub port: u16,
+    pub name:     String,
+    pub dialect:  String,
+    pub host:     String,
+    pub port:     u16,
     pub database: String,
     pub username: String,
     pub password: String,
@@ -92,16 +93,18 @@ pub async fn delete_connection_profile(
 
 // ---------- Connection testing + extraction ----------
 
+#[rustfmt::skip]
 #[derive(Debug, Deserialize)]
 pub struct TestConnectionRequest {
-    pub dialect: String,
-    pub host: String,
-    pub port: u16,
+    pub dialect:  String,
+    pub host:     String,
+    pub port:     u16,
     pub database: String,
     pub username: String,
     pub password: String,
 }
 
+#[rustfmt::skip]
 #[derive(Debug, Serialize)]
 pub struct TestConnectionResponse {
     /// `true` when the database role has INSERT, UPDATE, or DELETE grants.
@@ -415,17 +418,19 @@ pub async fn get_model_registry() -> Result<Value, String> {
 /// A single Q+SQL turn from the current session. Passed by the frontend when
 /// `session_context_enabled` is true (ADR 0017). The backend injects these
 /// into the prompt so the LLM can answer follow-up questions coherently.
+#[rustfmt::skip]
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct SessionTurn {
     pub question: String,
-    pub sql: String,
+    pub sql:      String,
 }
 
+#[rustfmt::skip]
 #[derive(Debug, Serialize)]
 pub struct GenerationResult {
-    pub sql: String,
+    pub sql:        String,
     pub history_id: String,
-    pub model: String,
+    pub model:      String,
 }
 
 #[tauri::command]
