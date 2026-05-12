@@ -225,7 +225,7 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   opacity: 0.7;
   background: rgba(0, 46, 106, 0.15);
   padding: 1px 5px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   margin-left: 4px;
 }
 .generate-btn svg.spin {
