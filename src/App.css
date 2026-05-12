@@ -12,7 +12,7 @@
   --border-soft: #303035;
   --text: #e5e2e1;
   --text-muted: #c2c6d6;
-  --text-dim: #8c909f;
+  --text-dim: #9499a8;    /* raised from #8c909f — passes AA contrast */
   --primary: #adc6ff;
   --primary-dim: #4d8eff;
   --primary-fg: #002e6a;
@@ -22,7 +22,14 @@
   --str: #a4c9ff;
   --danger: #ffb4ab;
   --danger-bg: #93000a;
-  --validated: #6cba6c;
+  --validated: #7dcc7d;   /* raised from #6cba6c — better badge legibility */
+
+  /* Radius scale — use these instead of ad-hoc px values */
+  --radius-sm:   4px;
+  --radius-md:   6px;
+  --radius-lg:   10px;
+  --radius-xl:   12px;
+  --radius-pill: 999px;
 
   font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   font-size: 14px;
@@ -67,13 +74,19 @@ body { margin: 0; background: var(--bg); color: var(--text); }
   color: var(--text-muted);
   font-size: 0.85rem;
   padding: 6px 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   font-family: inherit;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 .topbar-link:hover {
   background: var(--surface-3);
   color: var(--text);
+}
+.topbar-link.active {
+  background: rgba(173, 198, 255, 0.1);
+  color: var(--primary);
+  border-color: rgba(173, 198, 255, 0.25);
 }
 
 .container {
@@ -98,9 +111,14 @@ h2 { margin: 0; font-size: 1rem; font-weight: 600; color: var(--text); }
 .card {
   background: var(--surface-2);
   border: 1px solid var(--border-soft);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   padding: 18px 20px;
   margin-bottom: 16px;
+}
+/* Highlight the active/focal card (ask + generated SQL) with a left accent */
+.card.card-focal {
+  border-left: 2px solid var(--primary-dim);
+  padding-left: 18px;
 }
 
 .card-header {
@@ -119,7 +137,7 @@ h2 { margin: 0; font-size: 1rem; font-weight: 600; color: var(--text); }
 
 input, textarea, select {
   border: 1px solid var(--border-soft);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 8px 12px;
   font-size: 0.875rem;
   font-family: inherit;
@@ -129,10 +147,13 @@ input, textarea, select {
   outline: none;
   width: 100%;
   box-sizing: border-box;
-  transition: border-color 0.12s;
+  transition: border-color 0.12s, box-shadow 0.12s;
 }
 input::placeholder, textarea::placeholder { color: var(--text-dim); }
-input:focus, textarea:focus, select:focus { border-color: var(--primary-dim); }
+input:focus-visible, textarea:focus-visible, select:focus-visible {
+  border-color: var(--primary-dim);
+  box-shadow: 0 0 0 2px rgba(77, 142, 255, 0.3);
+}
 textarea { resize: vertical; }
 
 label {
@@ -151,23 +172,31 @@ button {
   border: 1px solid var(--primary);
   background-color: var(--primary);
   color: var(--primary-fg);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 6px 14px;
   font-size: 0.875rem;
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
-  transition: filter 0.12s, background-color 0.12s, color 0.12s;
+  transition: filter 0.12s, background-color 0.12s, color 0.12s, box-shadow 0.12s;
 }
 button:hover:not(:disabled) { filter: brightness(1.1); }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
+button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(77, 142, 255, 0.4);
+}
 
 button.secondary {
   background-color: transparent;
   color: var(--primary);
-  border-color: var(--border);
+  border-color: var(--border);    /* was --border, now explicit and visible */
 }
-button.secondary:hover:not(:disabled) { background-color: var(--surface-3); filter: none; }
+button.secondary:hover:not(:disabled) {
+  background-color: var(--surface-3);
+  border-color: var(--primary-dim);
+  filter: none;
+}
 
 button.link, button.link-danger {
   background: transparent;
@@ -184,7 +213,7 @@ button.link-danger:hover { color: var(--danger); background: transparent; filter
 /* ---------------- status ---------------- */
 
 .status {
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 8px 12px;
   font-size: 0.875rem;
   margin: 8px 0;
@@ -221,7 +250,7 @@ button.link-danger:hover { color: var(--danger); background: transparent; filter
   color: var(--text);
   border: none;
   padding: 6px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -246,7 +275,7 @@ button.link-danger:hover { color: var(--danger); background: transparent; filter
 .schema-block { margin-bottom: 10px; }
 .schema-name {
   font-weight: 600;
-  color: var(--primary);
+  color: var(--primary-dim);   /* decorative accent — reserve --primary for CTAs */
   margin-bottom: 4px;
   font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.85rem;
@@ -275,15 +304,16 @@ button.link-danger:hover { color: var(--danger); background: transparent; filter
 .badge {
   display: inline-block;
   margin-left: 6px;
-  font-size: 0.65rem;
-  padding: 1px 6px;
-  border-radius: 3px;
+  font-size: 0.68rem;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
   background: var(--surface-3);
   color: var(--text-muted);
   font-family: inherit;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-weight: 500;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  vertical-align: middle;
 }
 
 /* ---------------- output (legacy, used by old SqlBlock placement) ---------------- */
@@ -323,7 +353,7 @@ button.link-danger:hover { color: var(--danger); background: transparent; filter
   margin-bottom: 10px;
   background: var(--code-bg);
   border: 1px solid var(--border-soft);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 .sql-pre {
@@ -381,8 +411,8 @@ button.link-danger:hover { color: var(--danger); background: transparent; filter
   margin-bottom: 6px;
   color: var(--text);
 }
-.badge-ok    { background: rgba(108, 186, 108, 0.18); color: var(--validated); }
-.badge-error { background: rgba(147, 0, 10, 0.22); color: var(--danger); }
+.badge-ok    { background: rgba(125, 204, 125, 0.22); color: var(--validated); border: 1px solid rgba(125, 204, 125, 0.3); }
+.badge-error { background: rgba(147, 0, 10, 0.25); color: var(--danger); border: 1px solid rgba(255, 180, 171, 0.25); }
 
 /* ---------------- dialogs (native <dialog>) ---------------- */
 
@@ -391,7 +421,7 @@ button.link-danger:hover { color: var(--danger); background: transparent; filter
   max-height: 85vh;
   padding: 0;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-xl);
   box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
   background: var(--surface-2);
   color: var(--text);
@@ -408,20 +438,28 @@ button.link-danger:hover { color: var(--danger); background: transparent; filter
   padding: 14px 20px;
   border-bottom: 1px solid var(--border-soft);
   background: var(--surface);
-  border-radius: 12px 12px 0 0;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
 }
 .dialog-header h2 { font-size: 1rem; }
 .dialog-close {
   background: transparent;
   border: none;
-  font-size: 1.4rem;
+  font-size: 1.2rem;
   line-height: 1;
   color: var(--text-dim);
   cursor: pointer;
-  padding: 0 6px;
+  padding: 0;
   font-weight: 400;
+  /* minimum 32px touch target */
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  transition: background 0.12s, color 0.12s;
 }
-.dialog-close:hover { color: var(--text); background: transparent; filter: none; }
+.dialog-close:hover { color: var(--text); background: var(--surface-3); filter: none; }
 .dialog-body {
   padding: 16px 20px 20px;
   overflow-y: auto;
@@ -444,7 +482,7 @@ button.link-danger:hover { color: var(--danger); background: transparent; filter
   align-items: center;
   gap: 4px;
   padding: 4px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-3);
   color: var(--text-dim);
 }
@@ -483,15 +521,17 @@ button.link-danger:hover { color: var(--danger); background: transparent; filter
   vertical-align: middle;
 }
 .toggle-chip {
-  font-size: 0.7rem;
-  padding: 2px 8px;
-  border-radius: 999px;
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--border-soft);
   cursor: pointer;
   background: var(--surface-3);
   color: var(--text-muted);
   font-family: inherit;
   font-weight: 500;
+  min-height: 28px;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 .toggle-chip.on {
   background: rgba(173, 198, 255, 0.18);
@@ -534,7 +574,7 @@ button.link-danger:hover { color: var(--danger); background: transparent; filter
 
 .request-log details {
   border: 1px dashed var(--border-soft);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 6px 10px;
   margin-top: 10px;
   background: var(--surface);
@@ -552,7 +592,7 @@ button.link-danger:hover { color: var(--danger); background: transparent; filter
 .request-log pre {
   background: var(--code-bg);
   border: 1px solid var(--border-soft);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 8px 12px;
   font-size: 0.78rem;
   white-space: pre-wrap;
@@ -574,7 +614,7 @@ button.link-danger:hover { color: var(--danger); background: transparent; filter
   background: var(--surface-3);
   color: var(--text);
   border: 1px solid var(--border-soft);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   font-size: 0.8125rem;
   cursor: pointer;
   font-family: inherit;
@@ -591,7 +631,7 @@ button.link-danger:hover { color: var(--danger); background: transparent; filter
   min-width: 22rem;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   padding: 6px 0;
 }
@@ -619,7 +659,7 @@ button.link-danger:hover { color: var(--danger); background: transparent; filter
   font-weight: 400;
 }
 .picker-model:hover { background: var(--surface-3); filter: none; }
-.picker-model.active { background: rgba(173, 198, 255, 0.12); color: var(--primary); }
+.picker-model.active { background: rgba(173, 198, 255, 0.12); color: var(--primary-dim); }
 .picker-model.active::before { content: "✓ "; }
 .cost-tier {
   font-size: 0.65rem;
@@ -644,26 +684,26 @@ button.link-danger:hover { color: var(--danger); background: transparent; filter
 .suggestion-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
-  margin-top: 0.75rem;
+  gap: 4px;
+  margin-top: 12px;
 }
 
 .suggestion-chip {
   background: var(--surface-3);
   border: 1px solid var(--border-soft);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   color: var(--text-muted);
   cursor: pointer;
   font-size: 0.78rem;
   line-height: 1.4;
-  padding: 0.25rem 0.75rem;
+  padding: 4px 12px;
   text-align: left;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 .suggestion-chip:hover:not(:disabled) {
   background: var(--surface-4);
   border-color: var(--primary-dim);
-  color: var(--primary);
+  color: var(--primary-dim);
 }
 .suggestion-chip:disabled {
   opacity: 0.45;
@@ -717,7 +757,7 @@ button.link-danger:hover { color: var(--danger); background: transparent; filter
 }
 
 /* ── History dialog ─────────────────────────────────────────── */
-.app-dialog--wide { max-width: 760px; width: 90vw; }
+.app-dialog--wide { width: min(880px, calc(100vw - 32px)); }
 
 .history-list {
   list-style: none;
