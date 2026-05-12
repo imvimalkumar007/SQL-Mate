@@ -720,21 +720,21 @@ function App() {
       <header className="topbar">
         <div className="topbar-title">SQL Mate</div>
         <nav className="topbar-nav">
-          <button className="topbar-link" onClick={() => setOpenDialog("providers")}>
+          <button className={`topbar-link${openDialog === "providers" ? " active" : ""}`} onClick={() => setOpenDialog("providers")}>
             Providers
           </button>
-          <button className="topbar-link" onClick={() => setOpenDialog("connections")}>
+          <button className={`topbar-link${openDialog === "connections" ? " active" : ""}`} onClick={() => setOpenDialog("connections")}>
             Connections
           </button>
           {selectedProfile && (
-            <button className="topbar-link" onClick={() => void openHistory()}>
+            <button className={`topbar-link${openDialog === "history" ? " active" : ""}`} onClick={() => void openHistory()}>
               History
             </button>
           )}
-          <button className="topbar-link" onClick={() => setOpenDialog("settings")}>
+          <button className={`topbar-link${openDialog === "settings" ? " active" : ""}`} onClick={() => setOpenDialog("settings")}>
             Settings
           </button>
-          <button className="topbar-link" onClick={() => setOpenDialog("security")}>
+          <button className={`topbar-link${openDialog === "security" ? " active" : ""}`} onClick={() => setOpenDialog("security")}>
             Security review
           </button>
         </nav>
@@ -1002,7 +1002,7 @@ function App() {
             </section>
 
             {schema && (
-              <section className="card">
+              <section className="card card-focal">
                 <div className="ask-header">
                   <h2>Ask a question</h2>
                   <div className="feature-toggles">
@@ -1073,7 +1073,7 @@ function App() {
             )}
 
             {generatedSql && (
-              <section className="card">
+              <section className="card card-focal">
                 <div className="card-header">
                   <h2>Generated SQL</h2>
                   {generatedByModel && (
