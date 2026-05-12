@@ -485,6 +485,8 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   border-bottom: 1px solid var(--border);
   z-index: 50;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  max-height: 55vh;
+  overflow-y: auto;
 }
 
 .conn-menu-item {
