@@ -151,7 +151,8 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
   width: 100%;
   min-height: 64px;
   max-height: 120px;
-  background: var(--bg);
+  background: var(--surface-2);
+  color-scheme: dark;
   border: 1px solid var(--border-soft);
   border-radius: 6px;
   padding: 10px 12px;

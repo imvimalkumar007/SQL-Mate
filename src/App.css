@@ -123,8 +123,9 @@ input, textarea, select {
   padding: 8px 12px;
   font-size: 0.875rem;
   font-family: inherit;
-  background: var(--bg);
+  background: var(--surface-2);
   color: var(--text);
+  color-scheme: dark;
   outline: none;
   width: 100%;
   box-sizing: border-box;
