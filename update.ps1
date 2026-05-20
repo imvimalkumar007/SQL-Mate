@@ -1,4 +1,4 @@
-# SQL Mate update script (ADR 0017+)
+# SQL Mate update script
 # Rebuilds the app from source and reinstalls it in four steps.
 # Run via update.bat (double-click) or directly in PowerShell.
 
@@ -56,9 +56,10 @@ if ($procs) {
 
 # ── Step 4: run installer ──────────────────────────────────────────────────
 Write-Step 4 4 "Launching installer"
-$installerPath = Join-Path $projectRoot "src-tauri\target\release\bundle\nsis\SQL Mate_0.1.0_x64-setup.exe"
-if (-not (Test-Path $installerPath)) {
-    Abort "Installer not found at:`n  $installerPath`n`nThe build may have succeeded but placed the file elsewhere. Check src-tauri\target\release\bundle\nsis\"
+$nsisDir = Join-Path $projectRoot "src-tauri\target\release\bundle\nsis"
+$installerPath = Get-ChildItem -Path $nsisDir -Filter "*x64-setup.exe" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
+if (-not $installerPath) {
+    Abort "Installer not found in:`n  $nsisDir`n`nThe build may have succeeded but placed the file elsewhere. Check src-tauri\target\release\bundle\nsis\"
 }
 Write-Host "  Running: $installerPath"
 Write-Host "  Complete the wizard, then launch SQL Mate from the Start Menu."
