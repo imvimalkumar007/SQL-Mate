@@ -1122,7 +1122,7 @@ function App() {
                     <h3>Session history</h3>
                     <p className="muted small">
                       {sessionHistory.length} quer{sessionHistory.length === 1 ? "y" : "ies"} this
-                      session. In-memory only — clears on app restart.
+                      session. Entries persist to the encrypted store and survive restart (ADR 0018).
                     </p>
                     <ul>
                       {sessionHistory.slice(1).map((h, i) => (

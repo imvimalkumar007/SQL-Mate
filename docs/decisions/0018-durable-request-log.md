@@ -45,12 +45,26 @@ well within the range where the SQLCipher store stays fast. No automatic pruning
 version; the user can clear the log via `clear_request_log()` if needed. A future phase
 can add a configurable retention window.
 
+## Design change: ephemeral to durable
+
+The Phase 8 design was ephemeral by intent. The log cleared on app restart so that nothing
+about past LLM interactions remained at rest. That was a deliberate posture: minimise what
+persists on the user's machine beyond the schema cache and query history.
+
+This ADR changes that posture. Prompt content now sits at rest in the encrypted store
+permanently until the user clears it. The content is schema-derived (table and column names,
+types, user questions) and never includes row data, but it does include schema names, which
+can themselves be sensitive for some users. The tradeoff: auditability gained, persistence
+cost accepted. Users who want the old ephemeral behaviour can clear the log at any time; a
+future phase can add a configurable retention window.
+
 ## Consequences
 
 - Audit trail survives app restart, satisfying the SECURITY_MODEL.md claim more completely.
-- Schema text is stored inside the encrypted SQLCipher store, not on disk in plaintext.
-  Threat model: if the SQLCipher key is compromised the log content is also exposed, but
-  this is already true for the schema cache and history.
+- Schema metadata and user questions now sit at rest in the encrypted SQLCipher store. The
+  threat model is unchanged: the log is inside the same store as the schema cache and history.
+  If the SQLCipher key is compromised the log content is also exposed. Gaining that key on
+  Windows requires extracting the Windows Credential Manager secret (ADR 0016).
 - The per-generate-sql codepath now makes two writes: in-memory + SQLite. The SQLite write
   is synchronous (single Mutex on the Store) but small, so the extra latency is negligible
   compared to the LLM round-trip.
