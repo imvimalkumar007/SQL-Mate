@@ -3,6 +3,7 @@
 
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
 
 use super::{Store, StoreError};
 
@@ -14,9 +15,9 @@ pub struct ProviderConfig {
     pub kind:       String, // "anthropic" | "openai" | "openai_compatible"
     pub base_url:   String,
     pub model:      String,
-    // api_key never reaches the frontend.
-    #[serde(skip_serializing)]
-    pub api_key:    String,
+    // api_key never reaches the frontend; zeroed on drop via Zeroizing.
+    #[serde(skip)]
+    pub api_key:    Zeroizing<String>,
     pub created_at: i64,
 }
 
@@ -63,7 +64,7 @@ impl Store {
             kind: new.kind,
             base_url: new.base_url,
             model: new.model,
-            api_key: new.api_key,
+            api_key: Zeroizing::new(new.api_key),
             created_at,
         })
     }
@@ -126,7 +127,7 @@ fn row_to_provider(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProviderConfig> 
         kind: row.get(2)?,
         base_url: row.get(3)?,
         model: row.get(4)?,
-        api_key: row.get(5)?,
+        api_key: Zeroizing::new(row.get::<_, String>(5)?),
         created_at: row.get(6)?,
     })
 }
