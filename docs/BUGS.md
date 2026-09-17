@@ -296,3 +296,9 @@ Not bugs in the binary, but loose ends in the project's operational posture:
   sidecar Python tests run only on the developer's machine. Phase 8 will need
   GitHub Actions for cross-OS builds anyway; ride that work to add a
   pre-merge check pipeline.
+
+## Security backlog
+
+Items that improve the security posture but are not currently blocking the "safe for firms" claim.
+
+- **Scope `connect-src` to active provider origin at runtime (CSP tightening).** The current CSP sets `connect-src 'self' https:`, which allows outbound HTTPS to any host. This does not enforce the two-destination claim in SECURITY_MODEL.md T8; that claim is enforced by the code, not the CSP. A stronger fix would read the active provider's `base_url` at app startup and inject a Tauri `CspPolicy` scoped to that origin plus `'self'`. This requires a Tauri 2 CSP override API and needs to re-inject when the user changes providers. Tracked here because it is worth doing before public distribution, not because the current posture is unsafe (the LLM destination is still user-chosen and auditable in the request log).
