@@ -174,3 +174,17 @@ export type RequestLogEntry = {
   obfuscated_columns: number;
   excluded_tables:    string[];
 };
+
+// Durable entry as stored in the encrypted local store (ADR 0018).
+// prettier-ignore
+export type PersistedRequestLogEntry = {
+  id:                 number;
+  connection_id:      string;
+  timestamp:          number;
+  model:              string;
+  provider_kind:      string;
+  system_prompt:      string;
+  user_message:       string;
+  obfuscated_columns: number;
+  excluded_tables:    string[];
+};

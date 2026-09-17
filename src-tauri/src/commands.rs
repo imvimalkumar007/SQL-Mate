@@ -563,16 +563,30 @@ pub async fn generate_sql(
     };
 
     // Capture the request log entry for audit. This is the obfuscated form,
-    // which is what actually goes over the wire.
+    // which is what actually goes over the wire. Persisted to the encrypted
+    // store (ADR 0018) for durability across restarts, and also kept in the
+    // in-memory cache for the live session view.
+    let log_timestamp = time::OffsetDateTime::now_utc().unix_timestamp();
+    let log_obfuscated = obfuscator.replacement_count();
+    let _ = store.persist_request_log_entry(
+        &connection_id,
+        log_timestamp,
+        &pc.model,
+        &pc.kind,
+        SYSTEM_PROMPT_PG,
+        &user_message,
+        log_obfuscated,
+        &excluded_tables,
+    );
     request_log.record(
         &connection_id,
         RequestLogEntry {
-            timestamp: time::OffsetDateTime::now_utc().unix_timestamp(),
+            timestamp: log_timestamp,
             model: pc.model.clone(),
             provider_kind: pc.kind.clone(),
             system_prompt: SYSTEM_PROMPT_PG.to_string(),
             user_message: user_message.clone(),
-            obfuscated_columns: obfuscator.replacement_count(),
+            obfuscated_columns: log_obfuscated,
             excluded_tables,
         },
     );
@@ -838,6 +852,33 @@ pub async fn get_last_request_log(
     request_log: State<'_, RequestLog>,
 ) -> Result<Option<RequestLogEntry>, String> {
     Ok(request_log.last(&connection_id))
+}
+
+#[tauri::command]
+pub async fn get_request_log(
+    connection_id: String,
+    limit: Option<i64>,
+    store: State<'_, Store>,
+) -> Result<Vec<crate::store::PersistedRequestLogEntry>, String> {
+    store
+        .list_request_log(&connection_id, limit.unwrap_or(20))
+        .map_err(err)
+}
+
+#[tauri::command]
+pub async fn export_request_log_json(
+    store: State<'_, Store>,
+) -> Result<String, String> {
+    let entries = store.list_all_request_log().map_err(err)?;
+    serde_json::to_string_pretty(&entries).map_err(err)
+}
+
+#[tauri::command]
+pub async fn clear_request_log(
+    connection_id: String,
+    store: State<'_, Store>,
+) -> Result<usize, String> {
+    store.clear_request_log(&connection_id).map_err(err)
 }
 
 // ---------- Telemetry opt-in (Phase 9) ----------
