@@ -1,5 +1,6 @@
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
 
 use super::{Store, StoreError};
 
@@ -14,9 +15,9 @@ pub struct ConnectionProfile {
     pub database_name: String,
     pub username:      String,
     // Stored within the SQLCipher-encrypted local store. Not exposed back to
-    // the frontend.
-    #[serde(skip_serializing)]
-    pub password:      String,
+    // the frontend; zeroed on drop via Zeroizing.
+    #[serde(skip)]
+    pub password:      Zeroizing<String>,
     pub created_at:    i64,
     pub last_used_at:  Option<i64>,
 }
@@ -65,7 +66,7 @@ impl Store {
             port: new.port,
             database_name: new.database_name,
             username: new.username,
-            password: new.password,
+            password: Zeroizing::new(new.password),
             created_at,
             last_used_at: None,
         })
@@ -124,7 +125,7 @@ fn row_to_profile(row: &rusqlite::Row<'_>) -> rusqlite::Result<ConnectionProfile
         port: row.get::<_, i64>(4)? as u16,
         database_name: row.get(5)?,
         username: row.get(6)?,
-        password: row.get(7)?,
+        password: Zeroizing::new(row.get::<_, String>(7)?),
         created_at: row.get(8)?,
         last_used_at: row.get(9)?,
     })
