@@ -1,14 +1,12 @@
-# Phase 9: cross-OS unsigned build verification.
+# CI and build workflow.
 #
-# Builds the Tauri app on macOS, Windows, and Linux on every push and pull
-# request. Uploads the resulting installer artifacts so the team can manually
-# smoke-test on each OS without owning that hardware.
+# Two jobs:
+#   ci    runs on every push and PR: cargo clippy, cargo test, pytest.
+#         Runs on Linux only for speed; gates merges to main.
+#   build runs the full Tauri installer build on macOS, Windows, and Linux.
+#         Produces unsigned installers (signing is deferred, see PHASE_9B_DEFERRED.md).
 #
-# Signing is intentionally NOT done here — Phase 9b covers Apple notarization,
-# Windows Authenticode, and Linux deb signing, all of which need real-world
-# accounts and certificates. Until then this workflow produces unsigned
-# installers and lets us at least confirm the build graph is clean on every
-# OS.
+# Branch protection should require the ci job to pass before merge.
 
 name: Build
 
@@ -26,6 +24,55 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  ci:
+    name: Tests and lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Set up Rust toolchain (with clippy)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install sidecar Python deps (includes pytest)
+        run: |
+          python -m venv sidecar/.venv
+          sidecar/.venv/bin/python -m pip install -r sidecar/requirements.txt
+
+      - name: cargo clippy
+        working-directory: src-tauri
+        run: cargo clippy -- -D warnings
+
+      - name: cargo test
+        working-directory: src-tauri
+        run: cargo test --lib
+
+      - name: pytest (sidecar)
+        run: sidecar/.venv/bin/python -m pytest sidecar/ -v
+
   build:
     name: ${{ matrix.platform.name }}
     runs-on: ${{ matrix.platform.runner }}
