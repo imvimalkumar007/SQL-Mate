@@ -117,6 +117,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (2, include_str!("../../migrations/0002_provider_configs.sql")),
     (3, include_str!("../../migrations/0003_schema_embeddings.sql")),
     (4, include_str!("../../migrations/0004_widget_state.sql")),
+    (5, include_str!("../../migrations/0005_request_log.sql")),
 ];
 
 pub struct Store {

@@ -63,6 +63,8 @@ These are the threats we design against, in priority order.
 
 **Mitigation:** We log structure, not content. Allowed log content: counts (`24 tables extracted`), timings (`extraction took 1.2s`), error types (`validation failed: write statement detected`). Disallowed: any table name, column name, query text, or row data. Reviewed at every PR that touches logging.
 
+**Request log (ADR 0018):** The LLM request log is a deliberate audit record, not an incidental log. Each `generate_sql` call writes the post-obfuscation schema text (table and column names, types, PK/FK markers), the user question, and the excluded/obfuscated column counts to the SQLCipher-encrypted local store. This content persists until the user clears it via Settings (Audit log). It is schema metadata and user questions, not row data. Because it lives in the same SQLCipher store as the schema cache and history, the threat model is unchanged: an attacker who extracts the SQLCipher key can read it, but gaining that key already requires the user's Windows Credential Manager secret (ADR 0016). The user can inspect and export the log from the Audit log dialog.
+
 ### T6: Schema name leakage in requests
 
 **Scenario:** A user's schema includes table or column names that themselves are sensitive (revealing internal projects, customer identifiers, etc.).

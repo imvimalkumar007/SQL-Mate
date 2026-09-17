@@ -1,9 +1,11 @@
-// Phase 8: ephemeral, in-memory request log. Captures the exact prompt that
-// went out for each connection's most recent generate_sql call, so the user
-// can verify that excluded tables are absent and sensitive columns are
-// obfuscated before trusting the output.
+// Phase 8: in-memory request log. Captures the exact prompt that went out for
+// each connection's most recent generate_sql call, so the user can verify that
+// excluded tables are absent and sensitive columns are obfuscated.
 //
-// Not persisted. Lifetime is the app process; cleared on restart.
+// In-memory cache for the live session view (last entry per connection only).
+// Each entry is also persisted to the encrypted SQLCipher store via
+// store::request_log (ADR 0018); entries survive app restart and accumulate
+// until the user clears them.
 //
 // Stores the *post-obfuscation* user_message, which is the bytes that
 // actually traveled the wire. Showing the pre-obfuscation form would defeat

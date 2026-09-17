@@ -13,6 +13,7 @@ import type {
   EmbeddingStats,
   GenerationResult,
   ModelRegistry,
+  PersistedRequestLogEntry,
   ProviderConfig,
   ProviderKind,
   RequestLogEntry,
@@ -81,7 +82,7 @@ function defaultProviderForm(reg: ModelRegistry | null): NewProviderForm {
   };
 }
 
-type DialogId = "providers" | "connections" | "settings" | "security" | null;
+type DialogId = "providers" | "connections" | "settings" | "security" | "audit_log" | null;
 
 type SessionHistoryItem = {
   question: string;
@@ -171,7 +172,13 @@ function App() {
     connections: useRef<HTMLDialogElement>(null),
     settings: useRef<HTMLDialogElement>(null),
     security: useRef<HTMLDialogElement>(null),
+    audit_log: useRef<HTMLDialogElement>(null),
   };
+
+  // Durable request log (ADR 0018)
+  const [auditLogEntries, setAuditLogEntries] = useState<PersistedRequestLogEntry[]>([]);
+  const [auditLogBusy, setAuditLogBusy] = useState(false);
+  const [auditExportStatus, setAuditExportStatus] = useState<string | null>(null);
 
   useEffect(() => {
     void invoke<boolean>("get_onboarding_completed").then((done) => {
@@ -709,6 +716,25 @@ function App() {
           <button className="topbar-link" onClick={() => setOpenDialog("security")}>
             Security review
           </button>
+          <button
+            className="topbar-link"
+            onClick={() => {
+              setAuditLogEntries([]);
+              setAuditExportStatus(null);
+              setOpenDialog("audit_log");
+              if (selectedId) {
+                setAuditLogBusy(true);
+                void invoke<PersistedRequestLogEntry[]>("get_request_log", {
+                  connectionId: selectedId,
+                  limit: 20,
+                })
+                  .then(setAuditLogEntries)
+                  .finally(() => setAuditLogBusy(false));
+              }
+            }}
+          >
+            Audit log
+          </button>
         </nav>
       </header>
 
@@ -1096,7 +1122,7 @@ function App() {
                     <h3>Session history</h3>
                     <p className="muted small">
                       {sessionHistory.length} quer{sessionHistory.length === 1 ? "y" : "ies"} this
-                      session. In-memory only — clears on app restart.
+                      session. Entries persist to the encrypted store and survive restart (ADR 0018).
                     </p>
                     <ul>
                       {sessionHistory.slice(1).map((h, i) => (
@@ -1609,6 +1635,127 @@ function App() {
             </div>
           )}
           {pdfError && <div className="status status-error">{pdfError}</div>}
+        </div>
+      </dialog>
+
+      <dialog
+        ref={dialogRefs.audit_log}
+        className="app-dialog"
+        onClose={() => setOpenDialog(null)}
+      >
+        <div className="dialog-header">
+          <h2>Audit log</h2>
+          <button
+            className="dialog-close"
+            onClick={() => setOpenDialog(null)}
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+        <div className="dialog-body">
+          <p className="muted small">
+            Every LLM request for the active connection, newest first. Stored in
+            the encrypted local store. Shows the exact prompt that went to the
+            provider, with sensitive columns already obfuscated.
+          </p>
+          <div className="row" style={{ marginBottom: "0.6rem", gap: "0.5rem" }}>
+            <button
+              className="secondary"
+              disabled={auditLogBusy || !selectedId}
+              onClick={() => {
+                if (!selectedId) return;
+                setAuditLogBusy(true);
+                void invoke<PersistedRequestLogEntry[]>("get_request_log", {
+                  connectionId: selectedId,
+                  limit: 20,
+                })
+                  .then(setAuditLogEntries)
+                  .finally(() => setAuditLogBusy(false));
+              }}
+            >
+              {auditLogBusy ? "Loading…" : "Refresh"}
+            </button>
+            <button
+              className="secondary"
+              onClick={() => {
+                setAuditExportStatus(null);
+                void invoke<string>("export_request_log_json")
+                  .then((json) => {
+                    const blob = new Blob([json], { type: "application/json" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = "sql-mate-audit-log.json";
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    setAuditExportStatus("Exported.");
+                  })
+                  .catch((e) => setAuditExportStatus(`Export failed: ${String(e)}`));
+              }}
+            >
+              Export all as JSON
+            </button>
+            {selectedId && auditLogEntries.length > 0 && (
+              <button
+                className="link-danger"
+                onClick={() => {
+                  void invoke("clear_request_log", { connectionId: selectedId }).then(() => {
+                    setAuditLogEntries([]);
+                  });
+                }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          {auditExportStatus && (
+            <div className="status status-ok" style={{ marginBottom: "0.4rem" }}>
+              {auditExportStatus}
+            </div>
+          )}
+          {!selectedId && (
+            <p className="muted">Select a connection first to view its audit log.</p>
+          )}
+          {selectedId && !auditLogBusy && auditLogEntries.length === 0 && (
+            <p className="muted">No entries yet. Generate a query to see it here.</p>
+          )}
+          {auditLogEntries.length > 0 && (
+            <ul className="profile-list" style={{ maxHeight: "40vh", overflowY: "auto" }}>
+              {auditLogEntries.map((e) => (
+                <li key={e.id} style={{ display: "block", padding: "0.5rem 0" }}>
+                  <div className="profile-name" style={{ fontSize: "0.8rem" }}>
+                    {new Date(e.timestamp * 1000).toLocaleString()} &middot; {e.model}
+                    {e.obfuscated_columns > 0 && (
+                      <span style={{ color: "var(--color-warning, #b45309)", marginLeft: "0.4rem" }}>
+                        {e.obfuscated_columns} col{e.obfuscated_columns !== 1 ? "s" : ""} obfuscated
+                      </span>
+                    )}
+                    {e.excluded_tables.length > 0 && (
+                      <span style={{ color: "var(--color-muted)", marginLeft: "0.4rem" }}>
+                        {e.excluded_tables.length} table{e.excluded_tables.length !== 1 ? "s" : ""} excluded
+                      </span>
+                    )}
+                  </div>
+                  <pre
+                    style={{
+                      fontSize: "0.72rem",
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                      maxHeight: "8rem",
+                      overflow: "auto",
+                      background: "var(--color-surface-2, #f8f8f8)",
+                      borderRadius: "4px",
+                      padding: "0.4rem",
+                      marginTop: "0.3rem",
+                    }}
+                  >
+                    {e.user_message.slice(0, 400)}{e.user_message.length > 400 ? "…" : ""}
+                  </pre>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </dialog>
     </>
