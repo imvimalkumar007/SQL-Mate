@@ -1494,4 +1494,124 @@ mod tests {
             "MySQL prompt must mention PostgreSQL-specific syntax to avoid"
         );
     }
+
+    // T4 (Pack 2): verify that format_schema_for_prompt outputs only schema
+    // metadata — table names, column names, types, keys — and never includes
+    // anything that could be row data. Two cases: a normal schema and one where
+    // a column name looks like it could carry data ("ssn_value" as a column
+    // name, not a row value).
+
+    fn make_test_schema() -> SchemaModel {
+        use crate::schema::{Column, DbSchema, Dialect, ExtractionSource, ForeignKey, Table};
+        SchemaModel {
+            dialect: Dialect::Postgres,
+            extracted_at: 0,
+            source: ExtractionSource::Live {
+                connection_id: "test-conn".to_string(),
+            },
+            schemas: vec![DbSchema {
+                name: "public".to_string(),
+                tables: vec![Table {
+                    name: "customers".to_string(),
+                    primary_key: vec!["id".to_string()],
+                    foreign_keys: vec![],
+                    user_annotation: None,
+                    excluded: false,
+                    columns: vec![
+                        Column {
+                            name: "id".to_string(),
+                            data_type: "integer".to_string(),
+                            nullable: false,
+                            default: None,
+                            user_annotation: None,
+                            sensitive: false,
+                        },
+                        Column {
+                            name: "email".to_string(),
+                            data_type: "text".to_string(),
+                            nullable: true,
+                            default: None,
+                            user_annotation: None,
+                            sensitive: false,
+                        },
+                    ],
+                }],
+            }],
+        }
+    }
+
+    #[test]
+    fn payload_contains_table_and_column_names() {
+        let model = make_test_schema();
+        let payload = format_schema_for_prompt(&model);
+        assert!(payload.contains("customers"), "payload must include table name");
+        assert!(payload.contains("email"), "payload must include column name");
+        assert!(payload.contains("text"), "payload must include column type");
+    }
+
+    #[test]
+    fn payload_contains_no_row_data_sentinels() {
+        // Row data never enters SchemaModel; this confirms format_schema_for_prompt
+        // emits only the structural fields (name, data_type, pk/fk markers,
+        // annotation) and nothing that could be a sample value.
+        let model = make_test_schema();
+        let payload = format_schema_for_prompt(&model);
+        // The payload must not contain bare numeric values that could be mistaken
+        // for sample rows. The only integer in the schema text should come from
+        // "integer" (the type name), not a freestanding number.
+        let lines_with_only_digits: Vec<&str> = payload
+            .lines()
+            .filter(|l| l.trim().chars().all(|c| c.is_ascii_digit()))
+            .collect();
+        assert!(
+            lines_with_only_digits.is_empty(),
+            "payload must not contain bare numeric lines (potential row data): {:?}",
+            lines_with_only_digits
+        );
+    }
+
+    #[test]
+    fn payload_with_data_like_column_name_contains_only_metadata() {
+        // A column named "ssn_value" could sound like it holds row data.
+        // Confirm that format_schema_for_prompt includes the name and type
+        // but no other content.
+        use crate::schema::{Column, DbSchema, Dialect, ExtractionSource, Table};
+        let model = SchemaModel {
+            dialect: Dialect::Postgres,
+            extracted_at: 0,
+            source: ExtractionSource::Live {
+                connection_id: "test-conn".to_string(),
+            },
+            schemas: vec![DbSchema {
+                name: "public".to_string(),
+                tables: vec![Table {
+                    name: "sensitive_table".to_string(),
+                    primary_key: vec![],
+                    foreign_keys: vec![],
+                    user_annotation: None,
+                    excluded: false,
+                    columns: vec![Column {
+                        name: "ssn_value".to_string(),
+                        data_type: "char(9)".to_string(),
+                        nullable: true,
+                        default: None,
+                        user_annotation: None,
+                        sensitive: false,
+                    }],
+                }],
+            }],
+        };
+        let payload = format_schema_for_prompt(&model);
+        // Must include structural metadata
+        assert!(payload.contains("ssn_value"), "payload must include column name");
+        assert!(payload.contains("char(9)"), "payload must include column type");
+        // Must not include any text beyond what format_schema_for_prompt emits —
+        // specifically no sample values. Since SchemaModel has no sample_values
+        // field this is structurally guaranteed; the test makes it explicit.
+        let sample_value = "123456789";
+        assert!(
+            !payload.contains(sample_value),
+            "payload must not contain row data even when a column name sounds data-like"
+        );
+    }
 }
