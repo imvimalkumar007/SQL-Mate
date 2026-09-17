@@ -55,7 +55,7 @@ These are the threats we design against, in priority order.
 
 **Scenario:** A user's LLM API key is read by malware, by another application on their machine, or by us.
 
-**Mitigation:** Keys are stored in the SQLCipher-encrypted local store. We read the key from the store only at the moment of an outbound LLM request and do not cache it in long-lived memory. We never log keys. We never include keys in error messages or telemetry. On Windows, the SQLCipher key itself is stored in Windows Credential Manager (DPAPI-encrypted per user, ADR 0016) — an attacker now needs the user's Windows login credential to access it, not just file system read access. On macOS and Linux the key remains in a `chmod 0600` file alongside the store; OS keychain integration for those platforms is a future item.
+**Mitigation:** Keys are stored in the SQLCipher-encrypted local store. We read the key from the store only at the moment of an outbound LLM request and do not cache it in long-lived memory. We never log keys. We never include keys in error messages or telemetry. On Windows, the SQLCipher key itself is stored in Windows Credential Manager using `CRED_PERSIST_LOCAL_MACHINE` (DPAPI-encrypted per user, ADR 0016). Note: any process running as the same Windows user can call `CredReadW` without additional re-authentication — this provides isolation from file-system-only access, but a compromised user session can still read the credential. The general "compromised local machine is out of scope" stance (see "What we do not guarantee") applies here. On macOS and Linux the key remains in a `chmod 0600` file alongside the store; OS keychain integration for those platforms is a future item.
 
 ### T5: Data leak via logs
 
@@ -73,7 +73,7 @@ These are the threats we design against, in priority order.
 
 **Scenario:** A library we depend on is updated maliciously and ships an update that exfiltrates data.
 
-**Mitigation:** We pin exact versions of all dependencies in `Cargo.lock`, `package-lock.json`, and the Python sidecar's lockfile. We minimize the number of dependencies, especially in the LLM call path. We do not auto-update dependencies. Releases are signed.
+**Mitigation:** We pin exact versions of all dependencies in `Cargo.lock`, `pnpm-lock.yaml`, and the Python sidecar's lockfile. We minimize the number of dependencies, especially in the LLM call path. We do not auto-update dependencies. Note: installer signing is currently deferred — Windows NSIS installers are unsigned. Authenticode signing and macOS notarization are scoped in `docs/PHASE_9B_DEFERRED.md` and will be implemented before public distribution. Until then, installer authenticity can be verified by building from source.
 
 ### T8: Floating widget surface (Phase 10 / ADR 0014)
 
@@ -85,6 +85,7 @@ These are the threats we design against, in priority order.
 - **The widget does not capture keystrokes outside its own input box.** The global hotkey (`tauri-plugin-global-shortcut`) only listens for the configured combo (`Ctrl+Shift+Space` by default, rebindable in Settings) and triggers the widget's own toggle handler. No keylogger.
 - **No external font CDN.** The original prototype loaded Inter, JetBrains Mono, and Material Symbols from `fonts.googleapis.com`; the shipped widget bundles inline-SVG icons (`src/widget-icons.tsx`) and uses system font fallbacks, so no outbound request to Google. The two endpoints listed at the top of `ARCHITECTURE.md` (LLM provider + user database) remain the only outbound destinations.
 - **No outbound communication from the widget itself.** All Tauri commands the widget invokes are the same ones the main window invokes — `generate_sql`, `validate_sql`, `get_persisted_schema`, etc. The widget is a new view, not a new network surface.
+- **Content Security Policy.** A CSP is set in `tauri.conf.json`: `default-src 'self'`, `script-src 'self'`, `font-src 'self'` (no CDN fonts), `img-src 'self' data:` (inline SVG icons only). This prevents inline script injection and external stylesheet or font loads. `connect-src` is set to `'self' https:`, a broad wildcard rather than a two-destination restriction. It does not enforce which HTTPS hosts the app may call; that constraint comes from the code, not the CSP. The backlog item "scope connect-src to active provider origin at runtime" (see `docs/BUGS.md`) would close this gap.
 - **`transparent: true` on the window** (so the rounded corners don't leak white) does not give the widget any visibility into what's underneath it. It just means the OS doesn't paint a backdrop in the area outside the widget's HTML shape.
 - **Auto-start on Windows boot** (`tauri-plugin-autostart`, opt-in via Settings → "Start with Windows") writes a value to `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` so the app launches at login. The widget itself stays hidden in the tray until summoned. No background telemetry, no eager LLM calls — same posture as the manually-launched app.
 
@@ -98,9 +99,9 @@ A reviewer should be able to confirm our claims by:
 4. Reading the Python sidecar (`sidecar/main.py`) and the Rust pre-parse (`layer1_prevalidate` in `commands.rs`) and confirming the read-only enforcement logic — these still ship as defense in depth even though no execution path consumes their verdict.
 5. Running the app with a deliberately malformed schema or adversarial column comments and observing that no information from those fields can cause data exfiltration.
 6. Inspecting log files after extended use and confirming no schema or query content is present.
-7. Exporting the security review PDF (Settings → Security review pack → Export) and verifying every claim in it against the live state.
+7. Exporting the security review PDF (Settings → Security review pack → Export) and verifying every claim in it against the live state. Note: the PDF is written unencrypted to `<app_data_dir>/sql-mate/` and contains host/port/database name (but not passwords or API keys, which are noted as "stored encrypted, not included"). The export is user-initiated and local; treat the file as you would any document containing your database connection details.
 8. Reading `src-tauri/capabilities/default.json` and confirming that the widget's permission list (Phase 10) is bounded to window control (`set-size`, `set-position`, `show`, `hide`, `set-focus`, `is-visible`, `unminimize`), event listening, the global-shortcut allow-list, and the autostart allow-list. No screen-capture or input-injection permissions.
-9. Inspecting `src/widget.html` and `src/Widget.tsx` and confirming no third-party script tags, no `<link rel="stylesheet" href="https://...">`, no `fetch()` to anywhere except the existing Tauri command surface.
+9. Inspecting `src/widget.html` and `src/Widget.tsx` and confirming no third-party script tags, no `<link rel="stylesheet" href="https://...">`, no `fetch()` to anywhere except the existing Tauri command surface. The CSP in `tauri.conf.json` blocks inline scripts and external stylesheets at the WebView level. It does not restrict which HTTPS hosts the app connects to; that is enforced by the code, not by the CSP. See `docs/BUGS.md` for the backlog item to scope `connect-src` to the active provider origin.
 
 ## Disclosure
 
